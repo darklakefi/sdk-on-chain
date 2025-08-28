@@ -1,0 +1,30 @@
+[package]
+name = "darklake-sdk"
+version = "0.1.0"
+description = "Darklake DEX SDK - A standalone SDK for interacting with Darklake AMM pools"
+edition = { workspace = true }
+authors = ["Darklake Team"]
+license = "MIT"
+
+[dependencies]
+anchor-lang = { workspace = true }
+solana-sdk = { workspace = true }
+solana-rpc-client = { workspace = true }
+solana-rpc-client-api = { workspace = true }
+solana-account-decoder = { workspace = true }
+solana-sdk-ids = { workspace = true }
+solana-system-interface = { workspace = true }
+anyhow = { workspace = true }
+rust_decimal = { workspace = true }
+bincode = { workspace = true }
+log = { workspace = true }
+borsh = { workspace = true }
+
+# SPL
+spl-token = { workspace = true, features = ["no-entrypoint"] }
+spl-associated-token-account = { workspace = true, features = ["no-entrypoint"] }
+spl-token-2022 = { workspace = true, features = ["no-entrypoint"] }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["full"] }
+assert_matches = "1.5.0"
