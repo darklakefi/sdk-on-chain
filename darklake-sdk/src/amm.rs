@@ -7,6 +7,11 @@ pub trait Amm: Send + Sync {
     /// Get the label/name of the AMM
     fn label(&self) -> String;
     
+    /// Deserialize the AMM from a keyed account
+    fn from_keyed_account(keyed_account: &KeyedAccount) -> Result<Self>
+    where
+        Self: Sized;
+
     /// Get the program ID of the AMM
     fn program_id(&self) -> Pubkey;
     

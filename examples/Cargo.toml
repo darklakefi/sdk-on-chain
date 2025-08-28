@@ -1,0 +1,13 @@
+[package]
+name = "darklake-examples"
+version = "0.1.0"
+description = "Examples for using the Darklake DEX SDK"
+edition = { workspace = true }
+authors = ["Darklake Team"]
+license = "MIT"
+
+[dependencies]
+darklake-sdk = { path = "../darklake-sdk" }
+solana-sdk = { workspace = true }
+anyhow = { workspace = true }
+tokio = { workspace = true, features = ["full"] }

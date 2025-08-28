@@ -1,6 +1,10 @@
+use anchor_lang::prelude::*;
+
 use crate::amm::*;
+
 use crate::math::{get_transfer_fee, swap, rebalance_pool_ratio, SwapResultWithFromToLock};
-use anchor_lang::{prelude::AccountMeta, AnchorDeserialize, AnchorSerialize};
+
+use anchor_lang::{system_program, AnchorDeserialize, AnchorSerialize};
 use solana_sdk::{program_pack::Pack, pubkey, pubkey::Pubkey};
 use rust_decimal::Decimal;
 use anyhow::{Result, bail, Context};
@@ -74,6 +78,32 @@ impl Amm for DarklakeAmm {
     fn label(&self) -> String {
         "Darklake".to_string()
     }
+
+    fn from_keyed_account(keyed_account: &KeyedAccount) -> Result<Self> 
+    where
+        Self: Sized {
+            Ok(DarklakeAmm {
+                key: keyed_account.key,
+                pool: Pool::deserialize(&mut &keyed_account.account.data[8..])?,
+                amm_config: AmmConfig {
+                    trade_fee_rate: 0,
+                    create_pool_fee: 0,
+                    protocol_fee_rate: 0,
+                    wsol_trade_deposit: 0,
+                    deadline_slot_duration: 0,
+                    ratio_change_tolerance_rate: 0,
+                    bump: 0,
+                    halted: false,
+                    padding: [0; 16],
+                },
+                reserve_x_balance: 0,
+                reserve_y_balance: 0,
+                token_x_owner: Pubkey::default(),
+                token_y_owner: Pubkey::default(),
+                token_x_transfer_fee_config: None,
+                token_y_transfer_fee_config: None,
+            })
+        }
 
     fn program_id(&self) -> Pubkey {
         DARKLAKE_PROGRAM_ID
@@ -183,7 +213,7 @@ impl Amm for DarklakeAmm {
                     pool_wsol_reserve,
                     order,
                     associated_token_program: spl_associated_token_account::ID,
-                    system_program: solana_sdk::system_program::ID,
+                    system_program: system_program::ID,
                     token_mint_x_program: self.token_x_owner,
                     token_mint_y_program: self.token_y_owner,
                     token_program: spl_token::ID,

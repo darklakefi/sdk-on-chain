@@ -16,35 +16,44 @@ pub mod darklake_amm;
 // Re-export main types for easy access
 pub use amm::{Amm, Quote, QuoteParams, SwapParams, SwapMode, SwapAndAccountMetas, DarklakeAmmSwapParams};
 pub use darklake_amm::{DarklakeAmm, DARKLAKE_PROGRAM_ID};
+use solana_sdk::pubkey::Pubkey;
+
+use crate::amm::{AccountData, KeyedAccount};
+
+const POOL_SEED: &[u8] = b"pool";
+const AMM_CONFIG_SEED: &[u8] = b"amm_config";
+
+pub fn get_pool_key(
+    token_mint_x: Pubkey,
+    token_mint_y: Pubkey,
+) -> Pubkey {
+    // Convert token mints to bytes and ensure x is always below y by lexicographical order
+    let (ordered_x, ordered_y) = if token_mint_x < token_mint_y {
+        (token_mint_x, token_mint_y)
+    } else {
+        (token_mint_y, token_mint_x)
+    };
+
+    let amm_config_key = Pubkey::find_program_address(&[
+        AMM_CONFIG_SEED,
+        &0u32.to_le_bytes()
+    ], &DARKLAKE_PROGRAM_ID).0;
+
+    Pubkey::find_program_address(&[POOL_SEED, amm_config_key.as_ref(), ordered_x.as_ref(), ordered_y.as_ref()], &DARKLAKE_PROGRAM_ID).0
+}
 
 /// Create a new Darklake AMM instance from account data
 pub fn create_darklake_amm(
-    key: solana_sdk::pubkey::Pubkey,
-    account_data: &[u8],
+    pool_key: solana_sdk::pubkey::Pubkey,
+    pool_account_data: &[u8],
 ) -> anyhow::Result<DarklakeAmm> {
-    use anchor_lang::AnchorDeserialize;
-    
-    let pool = darklake_amm::Pool::deserialize(&mut &account_data[8..])?;
-    
-    Ok(DarklakeAmm {
-        key,
-        pool,
-        amm_config: darklake_amm::AmmConfig {
-            trade_fee_rate: 0,
-            create_pool_fee: 0,
-            protocol_fee_rate: 0,
-            wsol_trade_deposit: 0,
-            deadline_slot_duration: 0,
-            ratio_change_tolerance_rate: 0,
-            bump: 0,
-            halted: false,
-            padding: [0; 16],
+    let darklake_amm = DarklakeAmm::from_keyed_account(&KeyedAccount {
+        key: pool_key,
+        account: AccountData {
+            data: pool_account_data.to_vec(),
+            owner: Pubkey::default(),
         },
-        reserve_x_balance: 0,
-        reserve_y_balance: 0,
-        token_x_owner: solana_sdk::pubkey::Pubkey::default(),
-        token_y_owner: solana_sdk::pubkey::Pubkey::default(),
-        token_x_transfer_fee_config: None,
-        token_y_transfer_fee_config: None,
-    })
+    })?;
+
+    Ok(darklake_amm)
 }

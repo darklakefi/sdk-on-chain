@@ -18,7 +18,7 @@ anyhow = { workspace = true }
 rust_decimal = { workspace = true }
 bincode = { workspace = true }
 log = { workspace = true }
-borsh = { workspace = true }
+serde_json = "1.0.82"
 
 # SPL
 spl-token = { workspace = true, features = ["no-entrypoint"] }
@@ -27,4 +27,4 @@ spl-token-2022 = { workspace = true, features = ["no-entrypoint"] }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["full"] }
-assert_matches = "1.5.0"
+assert_matches = { workspace = true }

@@ -1,28 +1,145 @@
-# Jupiter Amm Implementation
+# Darklake DEX SDK
 
-This is a guide to help create the implementation necessary
+A standalone SDK for interacting with Darklake AMM pools on Solana. This SDK provides the core functionality for getting quotes, building swap instructions, and managing pool state without the complexity of Jupiter's routing and aggregation features.
 
-Guideline
+## Features
 
-- Limit the Amm implementation to deserializing the state and calling your sdk to quote, the detailed implementation should remain in your AMM sdk
-- Move everything that needs to be done only when the state changes to update, rather than quote
+- **Lightweight**: Focused only on Darklake-specific functionality
+- **Core AMM Operations**: Get quotes, build swap instructions, manage pool state
+- **Token Support**: Full support for both SPL Token and Token-2022 tokens
+- **Transfer Fee Handling**: Automatic handling of transfer fees for Token-2022 tokens
+- **Pool Rebalancing**: Built-in pool ratio rebalancing logic
+- **No External Dependencies**: Self-contained without Jupiter-specific features
 
-## Example Implementation
+## Installation
 
-[SPL Token Swap](./jupiter-core/src/amms/spl_token_swap_amm.rs)
+Add this to your `Cargo.toml`:
 
-Use `cargo test` to run the integration tests to verify that the simulation yields the same swap outcome as the Amm implementation
+```toml
+[dependencies]
+darklake-sdk = { git = "https://github.com/your-repo/darklake-sdk" }
+```
 
-## Test your own implementation
+## Quick Start
 
-Make sure your AMM is implemented and added to `PROGRAM_ID_TO_AMM_LABEL_WITH_AMM_FROM_KEYED_ACCOUNT`
+```rust
+use darklake_sdk::{DarklakeAmm, create_darklake_amm, QuoteParams, SwapMode};
+use solana_sdk::pubkey::Pubkey;
 
-Take a snapshot of your AMM state, this is to allow reproducible test and being able to capture edge cases
+// Create a Darklake AMM instance
+let amm_key = Pubkey::from_str("your_amm_pool_address").unwrap();
+let account_data = /* get account data from RPC */;
+let mut amm = create_darklake_amm(amm_key, &account_data).unwrap();
 
-`cargo run -r -- --rpc-url <RPC-URL> snapshot-amm --amm-id <AMM-ID>`
+// Get a quote for a swap
+let quote_params = QuoteParams {
+    input_mint: token_x_mint,
+    amount: 1000000, // 1 token (assuming 6 decimals)
+    swap_mode: SwapMode::ExactIn,
+};
 
-Add your amm to `test_exact_in_amms` and run the tests `cargo test`...
+let quote = amm.quote(&quote_params).unwrap();
+println!("Input: {}, Output: {}, Fee: {}", 
+    quote.in_amount, quote.out_amount, quote.fee_amount);
+```
 
-## Jupiter AMM Interface
+## Core Types
 
-Most importantly, the [Jupiter AMM Interface](https://docs.rs/crate/jupiter-amm-interface) is the main crate this integration depends on and must be used to be compatible with Jupiter. Do check it out.
+### DarklakeAmm
+
+The main AMM implementation that provides:
+
+- Pool state management
+- Quote calculations
+- Swap instruction building
+- Account metadata generation
+
+### AMM Trait
+
+A simplified trait that defines the core AMM interface:
+
+```rust
+pub trait Amm: Send + Sync {
+    fn label(&self) -> String;
+    fn program_id(&self) -> Pubkey;
+    fn quote(&self, params: &QuoteParams) -> Result<Quote>;
+    fn get_swap_and_account_metas(&self, params: &SwapParams) -> Result<SwapAndAccountMetas>;
+    // ... and more
+}
+```
+
+## Usage Examples
+
+### Getting Pool Information
+
+```rust
+let reserve_mints = amm.get_reserve_mints();
+println!("Pool tokens: {:?}", reserve_mints);
+
+let accounts_to_update = amm.get_accounts_to_update();
+println!("Accounts to update: {:?}", accounts_to_update);
+```
+
+### Building Swap Instructions
+
+```rust
+let swap_params = SwapParams {
+    source_mint: token_x_mint,
+    destination_mint: token_y_mint,
+    source_token_account: user_token_x_account,
+    destination_token_account: user_token_y_account,
+    token_transfer_authority: user_authority,
+    in_amount: 1000000,
+    minimum_out_amount: 950000,
+    swap_mode: SwapMode::ExactIn,
+};
+
+let swap_and_accounts = amm.get_swap_and_account_metas(&swap_params).unwrap();
+println!("Account metas: {:?}", swap_and_accounts.account_metas);
+```
+
+### Updating Pool State
+
+```rust
+// Create an account map with current pool data
+let mut account_map = AccountMap::new();
+// ... populate with account data from RPC
+
+// Update the AMM state
+amm.update(&account_map).unwrap();
+```
+
+## Architecture
+
+The SDK is organized into three main modules:
+
+1. **`amm`**: Core AMM trait and shared types
+2. **`math`**: Mathematical functions for swaps, fees, and pool rebalancing
+3. **`darklake_amm`**: Darklake-specific AMM implementation
+
+## Testing
+
+Run the test suite:
+
+```bash
+cargo test
+```
+
+## Differences from Jupiter
+
+This SDK is a simplified version that:
+
+- ✅ Keeps the core AMM functionality
+- ✅ Maintains the same structure for Darklake AMM
+- ✅ Provides all necessary mathematical functions
+- ❌ Removes Jupiter routing and aggregation
+- ❌ Removes swap chaining (not supported by Darklake)
+- ❌ Removes complex test harness dependencies
+
+## License
+
+MIT License - see LICENSE file for details.
+
+## Contributing
+
+Contributions are welcome! Please ensure all tests pass and follow the existing code style.

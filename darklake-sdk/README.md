@@ -17,7 +17,7 @@ Add this to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-darklake-sdk = { git = "https://github.com/your-repo/darklake-sdk" }
+darklake-sdk = { path = "path/to/darklake-sdk" }
 ```
 
 ## Quick Start
