@@ -12,6 +12,7 @@
 pub mod amm;
 pub mod math;
 pub mod darklake_amm;
+pub mod proof;
 
 // Re-export main types for easy access
 pub use amm::{Amm, Quote, QuoteParams, SwapParams, SwapMode, SwapAndAccountMetas, DarklakeAmmSwapParams};

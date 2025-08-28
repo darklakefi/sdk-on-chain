@@ -36,6 +36,10 @@ pub trait Amm: Send + Sync {
     /// Get swap parameters and account metadata
     fn get_swap_and_account_metas(&self, swap_params: &SwapParams) -> Result<SwapAndAccountMetas>;
     
+    /// Get settle parameters and account metadata
+    fn get_settle_and_account_metas(&self, settle_params: &SettleParams) -> Result<SettleAndAccountMetas>;
+    
+    
     /// Clone the AMM
     fn clone_amm(&self) -> Box<dyn Amm + Send + Sync>;
     
@@ -91,6 +95,16 @@ pub struct SwapParams {
     pub swap_mode: SwapMode,
 }
 
+/// Settle parameters
+#[derive(Debug, Clone)]
+pub struct SettleParams {
+    pub min_out: u64,
+    pub settle_signer: Pubkey,
+    pub order_owner: Pubkey,
+    pub unwrap_wsol: bool,
+}
+
+
 /// Swap result with account metadata
 #[derive(Debug, Clone)]
 pub struct SwapAndAccountMetas {
@@ -98,12 +112,29 @@ pub struct SwapAndAccountMetas {
     pub account_metas: Vec<AccountMeta>,
 }
 
+/// Settle result with account metadata
+#[derive(Debug, Clone)]
+pub struct SettleAndAccountMetas {
+    pub settle: DarklakeAmmSettleParams,
+    pub account_metas: Vec<AccountMeta>,
+}
+
 /// Darklake AMM swap parameters
 #[derive(Debug, Clone)]
 pub struct DarklakeAmmSwapParams {
     pub amount_in: u64,
-    pub is_x_to_y: bool,
+    pub is_swap_x_to_y: bool,
     pub c_min: [u8; 32],
+}
+
+/// Darklake AMM settle parameters
+#[derive(Debug, Clone)]
+pub struct DarklakeAmmSettleParams {
+    pub proof_a: [u8; 64],
+    pub proof_b: [u8; 128],
+    pub proof_c: [u8; 64],
+    pub public_signals: [[u8; 32]; 2],
+    pub unwrap_wsol: bool,
 }
 
 /// Keyed account for AMM operations
