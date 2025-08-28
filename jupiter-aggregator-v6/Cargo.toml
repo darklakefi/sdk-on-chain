@@ -1,0 +1,16 @@
+[package]
+name = "jupiter-aggregator-v6"
+version = "0.1.0"
+description = ""
+edition = { workspace = true }
+
+[features]
+staging = []
+
+[dependencies]
+anchor-lang = { workspace = true }
+solana-sdk = { workspace = true }
+jupiter-amm-interface = { workspace = true }
+spl-token = { workspace = true, features = ["no-entrypoint"]}
+jupiter-common = { workspace = true }
+rand = "0.8.5"
