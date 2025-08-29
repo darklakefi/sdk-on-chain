@@ -91,17 +91,21 @@ pub struct SwapParams {
     pub destination_token_account: Pubkey,
     pub token_transfer_authority: Pubkey,
     pub in_amount: u64,
-    pub minimum_out_amount: u64,
     pub swap_mode: SwapMode,
+    pub min_out: u64,
+    pub salt: [u8; 8],
 }
 
 /// Settle parameters
 #[derive(Debug, Clone)]
 pub struct SettleParams {
-    pub min_out: u64,
     pub settle_signer: Pubkey,
     pub order_owner: Pubkey,
     pub unwrap_wsol: bool,
+    pub min_out: u64,
+    pub salt: [u8; 8],
+    pub output: u64,
+    pub commitment: [u8; 32],
 }
 
 

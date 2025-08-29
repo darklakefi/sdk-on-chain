@@ -3,6 +3,8 @@ use anchor_lang::prelude::*;
 use crate::amm::*;
 
 use crate::math::{get_transfer_fee, swap, rebalance_pool_ratio, SwapResultWithFromToLock};
+use crate::proof::proof_generator::{convert_proof_to_solana_proof, from_32_byte_buffer, generate_proof, to_32_byte_buffer, PrivateProofInputs, PublicProofInputs};
+use crate::proof::utils::{bytes_to_bigint, compute_poseidon_hash_with_salt, u64_array_to_u8_array_le};
 
 use anchor_lang::{system_program, AnchorDeserialize, AnchorSerialize};
 use solana_sdk::{program_pack::Pack, pubkey, pubkey::Pubkey};
@@ -172,6 +174,8 @@ impl Amm for DarklakeAmm {
             destination_token_account,
             source_token_account,
             token_transfer_authority,
+            salt,
+            min_out,
             ..
         } = swap_params;
 
@@ -186,12 +190,16 @@ impl Amm for DarklakeAmm {
         let order = self.get_order(*token_transfer_authority);
         
         // ADD C_MIN COMMITMENT CALCULATION HERE
+        
+        let c_min = to_32_byte_buffer(&bytes_to_bigint(&u64_array_to_u8_array_le(
+            &compute_poseidon_hash_with_salt(*min_out, *salt),
+        )));
 
         Ok(SwapAndAccountMetas {
             swap: DarklakeAmmSwapParams {
                 amount_in: swap_params.in_amount,
                 is_swap_x_to_y,
-                c_min: [0; 32],
+                c_min,
             },
             account_metas: 
                 DarklakeAmmSwap {
@@ -230,10 +238,13 @@ impl Amm for DarklakeAmm {
     // darklake specific settlement-related functions
     fn get_settle_and_account_metas(&self, settle_params: &SettleParams) -> Result<SettleAndAccountMetas> {
         let SettleParams {
-            min_out,
             settle_signer,
             order_owner,
             unwrap_wsol,
+            min_out,
+            salt,
+            output,
+            commitment,
         } = settle_params;
 
         let authority = self.get_authority();
@@ -248,14 +259,33 @@ impl Amm for DarklakeAmm {
         let order = self.get_order(*order_owner);
         let order_token_account_wsol = self.get_order_token_account_wsol(*order_owner);
 
+        let private_inputs = PrivateProofInputs {
+            min_out: *min_out,
+            salt: u64::from_le_bytes(*salt),
+        };
+    
+        let public_inputs = PublicProofInputs {
+            real_out: *output,
+            commitment: from_32_byte_buffer(&commitment),
+        };
+    
         // ADD PROOF CALCULATION HERE
+        let (proof, _) =
+            generate_proof(&private_inputs, &public_inputs, false)
+                .map_err(|e| anyhow::anyhow!("Failed to generate proof: {}", e))?;
+
+        let solana_proof = convert_proof_to_solana_proof(&proof, &public_inputs);
+        let public_inputs_vec = solana_proof.public_signals.clone();
+        let public_inputs_arr: [[u8; 32]; 2] = public_inputs_vec
+            .try_into()
+            .map_err(|_| anyhow::anyhow!("Invalid public signals length"))?;
 
         Ok(SettleAndAccountMetas {
             settle: DarklakeAmmSettleParams {
-                proof_a: [0; 64],
-                proof_b: [0; 128],
-                proof_c: [0; 64],
-                public_signals: [[0; 32]; 2],
+                proof_a: solana_proof.proof_a,
+                proof_b: solana_proof.proof_b,
+                proof_c: solana_proof.proof_c,
+                public_signals: public_inputs_arr,
                 unwrap_wsol: *unwrap_wsol,
             },
             account_metas: 

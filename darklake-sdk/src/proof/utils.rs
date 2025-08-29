@@ -15,12 +15,12 @@ pub fn u64_array_to_u8_array_le(input: &[u64; 4]) -> [u8; 32] {
     output
 }
 
-pub fn compute_poseidon_hash_with_salt(min_out: u64, salt: [u8; 32]) -> [u64; 4] {
+pub fn compute_poseidon_hash_with_salt(min_out: u64, salt: [u8; 8]) -> [u64; 4] {
     let pos = poseidon::Poseidon::new();
 
     let min_out_field_element = Fr::from(min_out);
 
-    let salt_u64 = u64::from_le_bytes(salt[0..8].try_into().unwrap());
+    let salt_u64 = u64::from_le_bytes(salt);
     let salt_field_element = Fr::from(salt_u64);
 
     let inputs_for_poseidon: Vec<Fr> = vec![min_out_field_element, salt_field_element];
@@ -35,10 +35,10 @@ pub fn compute_poseidon_hash_with_salt(min_out: u64, salt: [u8; 32]) -> [u64; 4]
 pub fn compute_poseidon_hash(min_out: u64) -> [u64; 4] {
     let mut rng = OsRng;
 
-    let mut raw_salt_bytes_32 = [0u8; 32];
-    rng.fill_bytes(&mut raw_salt_bytes_32); // Fill with 32 cryptographically random bytes
+    let mut raw_salt_bytes_8 = [0u8; 8];
+    rng.fill_bytes(&mut raw_salt_bytes_8); // Fill with 32 cryptographically random bytes
 
-    let hash = compute_poseidon_hash_with_salt(min_out, raw_salt_bytes_32);
+    let hash = compute_poseidon_hash_with_salt(min_out, raw_salt_bytes_8);
 
     hash
 }
@@ -104,7 +104,7 @@ mod tests {
     #[test]
     fn test_poseidon_hash_bytes_and_field_element_all_zeroes() {
         let min_out = 0u64;
-        let salt = [0u8; 32];
+        let salt = [0u8; 8];
         let hash = compute_poseidon_hash_with_salt(min_out, salt);
         let bytes = u64_array_to_u8_array_le(&hash);
 
@@ -129,7 +129,7 @@ mod tests {
     #[test]
     fn test_poseidon_hash_bytes_and_field_element_non_zero_min_out() {
         let min_out = 1u64;
-        let salt = [0u8; 32];
+        let salt = [0u8; 8];
         let hash = compute_poseidon_hash_with_salt(min_out, salt);
         let bytes = u64_array_to_u8_array_le(&hash);
 
@@ -154,7 +154,7 @@ mod tests {
     #[test]
     fn test_poseidon_hash_bytes_and_field_element_non_zero_salt() {
         let min_out = 0u64;
-        let mut salt = [0u8; 32];
+        let mut salt = [0u8; 8];
         salt[0] = 100;
         let hash = compute_poseidon_hash_with_salt(min_out, salt);
         let bytes = u64_array_to_u8_array_le(&hash);

@@ -13,7 +13,7 @@ fn main() -> anyhow::Result<()> {
     let account_data = vec![0u8; 100]; // Mock data
     
     match create_darklake_amm(amm_key, &account_data) {
-        Ok(mut amm) => {
+        Ok(amm) => {
             println!("✅ Successfully created Darklake AMM");
             println!("   Label: {}", amm.label());
             println!("   Program ID: {}", amm.program_id());

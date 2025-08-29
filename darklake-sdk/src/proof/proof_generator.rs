@@ -70,7 +70,7 @@ pub fn find_circuit_path(filename: &str) -> String {
 ///
 /// # Returns
 /// * `Result<GeneratedProof>` - The generated proof components
-pub async fn generate_proof(
+pub fn generate_proof(
     private_inputs: &PrivateProofInputs,
     public_inputs: &PublicProofInputs,
     is_cancel: bool,
@@ -96,9 +96,7 @@ pub async fn generate_proof(
     println!("directory logic passed");
 
     // // Create Circom configuration
-    let result_handle =
-        task::spawn_blocking(move || CircomConfig::<Fr>::new(&wasm_path, &r1cs_path).unwrap());
-    let cfg = result_handle.await.unwrap();
+    let cfg = CircomConfig::<Fr>::new(&wasm_path, &r1cs_path).unwrap();
 
     // // Build the circuit
     let mut builder = CircomBuilder::new(cfg);
@@ -114,27 +112,8 @@ pub async fn generate_proof(
     builder.push_input("commitment", public_inputs.commitment.clone());
     let mut rng = thread_rng();
 
-    let key_file_tokio = tokio::fs::File::open(zkey_path).await?;
-    let (params, _) = task::spawn_blocking(move || {
-        let mut key_file_std: std::fs::File = key_file_tokio.try_into_std().map_err(|e| {
-            io::Error::new(
-                io::ErrorKind::Other,
-                format!(
-                    "Failed to convert tokio::fs::File to std::fs::File: {:?}",
-                    e
-                ),
-            )
-        })?;
-
-        ark_circom::read_zkey(&mut key_file_std)
-    })
-    .await
-    .map_err(|e| {
-        io::Error::new(
-            io::ErrorKind::Other,
-            format!("Blocking task failed: {:?}", e),
-        )
-    })??;
+    let mut key_file = std::fs::File::open(zkey_path).unwrap();
+    let (params, _) = ark_circom::read_zkey(&mut key_file).unwrap();
 
     // // Generate the proof
     let circom = builder.build().unwrap();
@@ -318,7 +297,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_settle_proof_generation_verification() {
-        let salt_bytes = [0; 32];
+        let salt_bytes = [0; 8];
         let commitment = bytes_to_bigint(&u64_array_to_u8_array_le(
             &compute_poseidon_hash_with_salt(1, salt_bytes),
         ));
@@ -334,7 +313,7 @@ mod tests {
         };
 
         // This test will fail without actual circuit files, but it demonstrates the API
-        let result = generate_proof(&private_inputs, &public_inputs, false).await;
+        let result = generate_proof(&private_inputs, &public_inputs, false);
 
         let zkey_path = format!("src/proof/circuits/settle_final.zkey");
 
@@ -353,7 +332,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_cancel_proof_generation_verification() {
-        let salt_bytes = [0; 32];
+        let salt_bytes = [0; 8];
         let commitment = bytes_to_bigint(&u64_array_to_u8_array_le(
             &compute_poseidon_hash_with_salt(10_000_000_000, salt_bytes),
         ));
@@ -369,7 +348,7 @@ mod tests {
         };
 
         // This test will fail without actual circuit files, but it demonstrates the API
-        let result = generate_proof(&private_inputs, &public_inputs, true).await;
+        let result = generate_proof(&private_inputs, &public_inputs, true);
 
         let zkey_path = format!("src/proof/circuits/cancel_final.zkey");
 
@@ -388,7 +367,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_solana_proof_conversion() {
-        let salt_bytes = [0; 32];
+        let salt_bytes = [0; 8];
         let commitment = bytes_to_bigint(&u64_array_to_u8_array_le(
             &compute_poseidon_hash_with_salt(0, salt_bytes),
         ));
