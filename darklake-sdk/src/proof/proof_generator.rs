@@ -7,12 +7,11 @@ use ark_groth16::{Groth16, Proof};
 use ark_std::rand::thread_rng;
 use num_bigint::BigUint;
 use num_traits::Num;
-use std::env;
+
 use std::ops::Neg;
 use std::path::Path;
-use tokio::task;
 type GrothBn = Groth16<Bn254, CircomReduction>;
-use std::io::{self};
+
 
 /// Represents the inputs for proof generation
 #[derive(Debug, Clone)]
@@ -50,15 +49,11 @@ fn bigint_to_bytes_be(bigint: &BigInt<4>) -> [u8; 32] {
 
 /// Finds the correct path to circuit files regardless of where the code is executed from
 pub fn find_circuit_path(filename: &str) -> String {
-    let current_dir = env::current_dir().unwrap();
-
-    // Check if we're in the project root (has darklake-sdk subdirectory)
-    if current_dir.join("darklake-sdk").exists() {
-        format!("darklake-sdk/src/proof/circuits/{}", filename)
-    } else {
-        // We're likely in the darklake-sdk directory or a subdirectory
-        format!("src/proof/circuits/{}", filename)
-    }
+    // Simply use CARGO_MANIFEST_DIR which points to the darklake-sdk directory
+    // and construct the path to circuits from there
+    let circuits_path = format!("{}/src/proof/circuits/{}", env!("CARGO_MANIFEST_DIR"), filename);
+    println!("Generated path for {}: {}", filename, circuits_path);
+    circuits_path
 }
 
 /// Generates a Groth16 proof using WASM circuits
@@ -82,6 +77,7 @@ pub fn generate_proof(
     let zkey_path = find_circuit_path(&format!("{}_final.zkey", file_prefix));
     let r1cs_path = find_circuit_path(&format!("{}.r1cs", file_prefix));
 
+    println!("wasm_path: {}", wasm_path);
     // Check if files exist
     if !Path::new(&wasm_path).exists() {
         return Err(anyhow::anyhow!("WASM file not found: {}", wasm_path));
@@ -98,6 +94,7 @@ pub fn generate_proof(
     // // Create Circom configuration
     let cfg = CircomConfig::<Fr>::new(&wasm_path, &r1cs_path).unwrap();
 
+    println!("Config created");
     // // Build the circuit
     let mut builder = CircomBuilder::new(cfg);
 
@@ -315,7 +312,7 @@ mod tests {
         // This test will fail without actual circuit files, but it demonstrates the API
         let result = generate_proof(&private_inputs, &public_inputs, false);
 
-        let zkey_path = format!("src/proof/circuits/settle_final.zkey");
+        let zkey_path = find_circuit_path("settle_final.zkey");
 
         let mut key_file = std::fs::File::open(zkey_path).unwrap();
         let (params, _) = read_zkey(&mut key_file).unwrap();
@@ -350,7 +347,7 @@ mod tests {
         // This test will fail without actual circuit files, but it demonstrates the API
         let result = generate_proof(&private_inputs, &public_inputs, true);
 
-        let zkey_path = format!("src/proof/circuits/cancel_final.zkey");
+        let zkey_path = find_circuit_path("cancel_final.zkey");
 
         let mut key_file = std::fs::File::open(zkey_path).unwrap();
         let (params, _) = read_zkey(&mut key_file).unwrap();

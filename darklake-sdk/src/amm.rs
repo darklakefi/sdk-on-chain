@@ -36,15 +36,32 @@ pub trait Amm: Send + Sync {
     /// Get swap parameters and account metadata
     fn get_swap_and_account_metas(&self, swap_params: &SwapParams) -> Result<SwapAndAccountMetas>;
     
-    /// Get settle parameters and account metadata
-    fn get_settle_and_account_metas(&self, settle_params: &SettleParams) -> Result<SettleAndAccountMetas>;
-    
     
     /// Clone the AMM
     fn clone_amm(&self) -> Box<dyn Amm + Send + Sync>;
     
     /// Check if the AMM is active
     fn is_active(&self) -> bool;
+
+    // Darklake specific
+
+    /// Get settle parameters and account metadata
+    fn get_settle_and_account_metas(&self, settle_params: &SettleParams) -> Result<SettleAndAccountMetas>;
+
+    /// Get order pubkey
+    fn get_order_pubkey(&self, user: Pubkey) -> Result<Pubkey>;
+
+    /// Get order output
+    fn get_order_output_and_deadline(&self, order_data: &[u8]) -> Result<(u64, u64)>;
+
+    /// Check if order is expired
+    fn is_order_expired(&self, order_data: &[u8], current_slot: u64) -> Result<bool>;
+
+    /// Get cancel parameters and account metadata
+    fn get_cancel_and_account_metas(&self, cancel_params: &CancelParams) -> Result<CancelAndAccountMetas>;
+
+    /// Get slash parameters and account metadata
+    fn get_slash_and_account_metas(&self, slash_params: &SlashParams) -> Result<SlashAndAccountMetas>;
 }
 
 /// Account map for storing account data
@@ -106,12 +123,36 @@ pub struct SettleParams {
     pub salt: [u8; 8],
     pub output: u64,
     pub commitment: [u8; 32],
+    pub deadline: u64,
+    pub current_slot: u64,
 }
 
+/// Cancel parameters
+#[derive(Debug, Clone)]
+pub struct CancelParams {
+    pub settle_signer: Pubkey,
+    pub order_owner: Pubkey,
+    pub min_out: u64,
+    pub salt: [u8; 8],
+    pub output: u64,
+    pub commitment: [u8; 32],
+    pub deadline: u64,
+    pub current_slot: u64,
+}
+
+/// Slash parameters
+#[derive(Debug, Clone)]
+pub struct SlashParams {
+    pub settle_signer: Pubkey,
+    pub order_owner: Pubkey,
+    pub deadline: u64,
+    pub current_slot: u64,
+}
 
 /// Swap result with account metadata
 #[derive(Debug, Clone)]
 pub struct SwapAndAccountMetas {
+    pub discriminator: [u8; 8],
     pub swap: DarklakeAmmSwapParams,
     pub account_metas: Vec<AccountMeta>,
 }
@@ -119,7 +160,25 @@ pub struct SwapAndAccountMetas {
 /// Settle result with account metadata
 #[derive(Debug, Clone)]
 pub struct SettleAndAccountMetas {
+    pub discriminator: [u8; 8],
     pub settle: DarklakeAmmSettleParams,
+    pub account_metas: Vec<AccountMeta>,
+}
+
+/// Cancel result with account metadata
+#[derive(Debug, Clone)]
+pub struct CancelAndAccountMetas {
+    pub discriminator: [u8; 8],
+    pub cancel: DarklakeAmmCancelParams,
+    pub account_metas: Vec<AccountMeta>,
+}
+
+/// Slash result with account metadata
+
+#[derive(Debug, Clone)]
+pub struct SlashAndAccountMetas {
+    pub discriminator: [u8; 8],
+    pub slash: DarklakeAmmSlashParams,
     pub account_metas: Vec<AccountMeta>,
 }
 
@@ -140,6 +199,19 @@ pub struct DarklakeAmmSettleParams {
     pub public_signals: [[u8; 32]; 2],
     pub unwrap_wsol: bool,
 }
+
+/// Darklake AMM settle parameters
+#[derive(Debug, Clone)]
+pub struct DarklakeAmmCancelParams {
+    pub proof_a: [u8; 64],
+    pub proof_b: [u8; 128],
+    pub proof_c: [u8; 64],
+    pub public_signals: [[u8; 32]; 2],
+}
+
+/// Darklake AMM slash parameters
+#[derive(Debug, Clone)]
+pub struct DarklakeAmmSlashParams {}
 
 /// Keyed account for AMM operations
 #[derive(Debug, Clone)]

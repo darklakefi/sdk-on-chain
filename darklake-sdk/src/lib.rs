@@ -15,7 +15,7 @@ pub mod darklake_amm;
 pub mod proof;
 
 // Re-export main types for easy access
-pub use amm::{Amm, Quote, QuoteParams, SwapParams, SwapMode, SwapAndAccountMetas, DarklakeAmmSwapParams};
+pub use amm::{Amm, Quote, QuoteParams, SwapParams, SettleParams, SwapMode, SwapAndAccountMetas, SettleAndAccountMetas, DarklakeAmmSwapParams, DarklakeAmmSettleParams};
 pub use darklake_amm::{DarklakeAmm, DARKLAKE_PROGRAM_ID};
 use solana_sdk::pubkey::Pubkey;
 
@@ -52,7 +52,7 @@ pub fn create_darklake_amm(
         key: pool_key,
         account: AccountData {
             data: pool_account_data.to_vec(),
-            owner: Pubkey::default(),
+            owner: DARKLAKE_PROGRAM_ID,
         },
     })?;
 
