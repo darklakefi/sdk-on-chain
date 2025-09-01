@@ -1,4 +1,4 @@
-use darklake_sdk::{DarklakeAmm, DARKLAKE_PROGRAM_ID, create_darklake_amm, Amm};
+use darklake_sdk::{create_darklake_amm, Amm, DarklakeAmm, DARKLAKE_PROGRAM_ID};
 use solana_sdk::pubkey::Pubkey;
 
 #[test]
@@ -15,7 +15,7 @@ fn test_create_darklake_amm() {
     // Test creating a Darklake AMM instance
     let key = Pubkey::new_unique();
     let account_data = vec![0u8; 100]; // Mock account data
-    
+
     let result = create_darklake_amm(key, &account_data);
     // This should fail due to invalid account data, but we're testing the function exists
     assert!(result.is_err()); // Expected to fail with invalid data
@@ -62,7 +62,7 @@ fn test_amm_trait_implementation() {
         token_x_transfer_fee_config: None,
         token_y_transfer_fee_config: None,
     };
-    
+
     assert_eq!(amm.label(), "Darklake");
     assert_eq!(amm.program_id(), DARKLAKE_PROGRAM_ID);
     assert_eq!(amm.key(), key);

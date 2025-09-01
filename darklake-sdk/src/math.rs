@@ -2,7 +2,10 @@ use anyhow::Result;
 use solana_sdk::{clock::Clock, sysvar::Sysvar};
 
 /// Calculate the fee for input amount
-pub fn get_transfer_fee(transfer_fee_config: &Option<spl_token_2022::extension::transfer_fee::TransferFeeConfig>, pre_fee_amount: u64) -> Result<u64> {
+pub fn get_transfer_fee(
+    transfer_fee_config: &Option<spl_token_2022::extension::transfer_fee::TransferFeeConfig>,
+    pre_fee_amount: u64,
+) -> Result<u64> {
     if transfer_fee_config.is_none() {
         return Ok(0);
     }

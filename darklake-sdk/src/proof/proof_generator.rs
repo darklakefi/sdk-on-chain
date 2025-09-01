@@ -12,7 +12,6 @@ use std::ops::Neg;
 use std::path::Path;
 type GrothBn = Groth16<Bn254, CircomReduction>;
 
-
 /// Represents the inputs for proof generation
 #[derive(Debug, Clone)]
 pub struct PrivateProofInputs {
@@ -51,7 +50,11 @@ fn bigint_to_bytes_be(bigint: &BigInt<4>) -> [u8; 32] {
 pub fn find_circuit_path(filename: &str) -> String {
     // Simply use CARGO_MANIFEST_DIR which points to the darklake-sdk directory
     // and construct the path to circuits from there
-    let circuits_path = format!("{}/src/proof/circuits/{}", env!("CARGO_MANIFEST_DIR"), filename);
+    let circuits_path = format!(
+        "{}/src/proof/circuits/{}",
+        env!("CARGO_MANIFEST_DIR"),
+        filename
+    );
     println!("Generated path for {}: {}", filename, circuits_path);
     circuits_path
 }

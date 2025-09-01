@@ -1,12 +1,12 @@
 use anchor_lang::prelude::AccountMeta;
-use solana_sdk::pubkey::Pubkey;
 use anyhow::Result;
+use solana_sdk::pubkey::Pubkey;
 
 /// Core AMM trait for Darklake DEX operations
 pub trait Amm: Send + Sync {
     /// Get the label/name of the AMM
     fn label(&self) -> String;
-    
+
     /// Deserialize the AMM from a keyed account
     fn from_keyed_account(keyed_account: &KeyedAccount) -> Result<Self>
     where
@@ -14,39 +14,41 @@ pub trait Amm: Send + Sync {
 
     /// Get the program ID of the AMM
     fn program_id(&self) -> Pubkey;
-    
+
     /// Get the key/address of the AMM
     fn key(&self) -> Pubkey;
-    
+
     /// Get the reserve token mints
     fn get_reserve_mints(&self) -> Vec<Pubkey>;
-    
+
     /// Get accounts that need to be updated
     fn get_accounts_to_update(&self) -> Vec<Pubkey>;
-    
+
     /// Update the AMM state from account data
     fn update(&mut self, account_map: &AccountMap) -> Result<()>;
-    
+
     /// Check if exact out swaps are supported
     fn supports_exact_out(&self) -> bool;
-    
+
     /// Get a quote for a swap
     fn quote(&self, quote_params: &QuoteParams) -> Result<Quote>;
-    
+
     /// Get swap parameters and account metadata
     fn get_swap_and_account_metas(&self, swap_params: &SwapParams) -> Result<SwapAndAccountMetas>;
-    
-    
+
     /// Clone the AMM
     fn clone_amm(&self) -> Box<dyn Amm + Send + Sync>;
-    
+
     /// Check if the AMM is active
     fn is_active(&self) -> bool;
 
     // Darklake specific
 
     /// Get settle parameters and account metadata
-    fn get_settle_and_account_metas(&self, settle_params: &SettleParams) -> Result<SettleAndAccountMetas>;
+    fn get_settle_and_account_metas(
+        &self,
+        settle_params: &SettleParams,
+    ) -> Result<SettleAndAccountMetas>;
 
     /// Get order pubkey
     fn get_order_pubkey(&self, user: Pubkey) -> Result<Pubkey>;
@@ -58,13 +60,22 @@ pub trait Amm: Send + Sync {
     fn is_order_expired(&self, order_data: &[u8], current_slot: u64) -> Result<bool>;
 
     /// Get cancel parameters and account metadata
-    fn get_cancel_and_account_metas(&self, cancel_params: &CancelParams) -> Result<CancelAndAccountMetas>;
+    fn get_cancel_and_account_metas(
+        &self,
+        cancel_params: &CancelParams,
+    ) -> Result<CancelAndAccountMetas>;
 
     /// Get slash parameters and account metadata
-    fn get_slash_and_account_metas(&self, slash_params: &SlashParams) -> Result<SlashAndAccountMetas>;
+    fn get_slash_and_account_metas(
+        &self,
+        slash_params: &SlashParams,
+    ) -> Result<SlashAndAccountMetas>;
 
     // helper
-    fn get_finalize_and_account_metas(&self, finalize_params: &FinalizeParams) -> Result<FinalizeAndAccountMetas>;
+    fn get_finalize_and_account_metas(
+        &self,
+        finalize_params: &FinalizeParams,
+    ) -> Result<FinalizeAndAccountMetas>;
 }
 
 /// Account map for storing account data
