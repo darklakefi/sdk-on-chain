@@ -199,8 +199,6 @@ impl Amm for DarklakeAmm {
 
     fn get_swap_and_account_metas(&self, swap_params: &SwapParams) -> Result<SwapAndAccountMetas> {
         let SwapParams {
-            destination_token_account,
-            source_token_account,
             token_transfer_authority,
             salt,
             min_out,
@@ -222,23 +220,22 @@ impl Amm for DarklakeAmm {
         let commitment = to_32_byte_buffer(&bytes_to_bigint(&u64_array_to_u8_array_le(
             &compute_poseidon_hash_with_salt(*min_out, *salt),
         )));
+        let discriminator = [248, 198, 158, 145, 225, 117, 135, 200];
+
+        let mut data = discriminator.to_vec();
+
+        data.extend_from_slice(&swap_params.in_amount.to_le_bytes());
+        data.extend_from_slice(&[is_swap_x_to_y as u8]);
+        data.extend_from_slice(&commitment);
 
         Ok(SwapAndAccountMetas {
-            discriminator: [
-                248,
-                198,
-                158,
-                145,
-                225,
-                117,
-                135,
-                200
-              ],
+            discriminator,
             swap: DarklakeAmmSwapParams {
                 amount_in: swap_params.in_amount,
                 is_swap_x_to_y,
                 c_min: commitment,
             },
+            data,
             account_metas: 
                 DarklakeAmmSwap {
                     user: *token_transfer_authority,
@@ -349,9 +346,18 @@ impl Amm for DarklakeAmm {
         if !is_settle {
             bail!("Cant settle this order, min_out > output");
         }
+        let discriminator = [175, 42, 185, 87, 144, 131, 102, 212];
+
+        let mut data = discriminator.to_vec();
+        data.extend_from_slice(&solana_proof.proof_a);
+        data.extend_from_slice(&solana_proof.proof_b);
+        data.extend_from_slice(&solana_proof.proof_c);
+        data.extend_from_slice(&public_inputs_arr[0]);
+        data.extend_from_slice(&public_inputs_arr[1]);
+        data.extend_from_slice(&[*unwrap_wsol as u8]);
 
         Ok(SettleAndAccountMetas {
-            discriminator: [175, 42, 185, 87, 144, 131, 102, 212],
+            discriminator,
             settle: DarklakeAmmSettleParams {
                 proof_a: solana_proof.proof_a,
                 proof_b: solana_proof.proof_b,
@@ -359,6 +365,7 @@ impl Amm for DarklakeAmm {
                 public_signals: public_inputs_arr,
                 unwrap_wsol: *unwrap_wsol,
             },
+            data,
             account_metas: 
                 DarklakeAmmSettle {
                     caller: *settle_signer,
@@ -444,23 +451,24 @@ impl Amm for DarklakeAmm {
             bail!("Cant cancel this order, min_out <= output");
         }
 
+        let discriminator = [232, 219, 223, 41, 219, 236, 220, 190];
+
+        let mut data = discriminator.to_vec();
+        data.extend_from_slice(&solana_proof.proof_a);
+        data.extend_from_slice(&solana_proof.proof_b);
+        data.extend_from_slice(&solana_proof.proof_c);
+        data.extend_from_slice(&public_inputs_arr[0]);
+        data.extend_from_slice(&public_inputs_arr[1]);
+
         Ok(CancelAndAccountMetas {
-            discriminator: [
-                232,
-                219,
-                223,
-                41,
-                219,
-                236,
-                220,
-                190
-              ],
+            discriminator,
             cancel: DarklakeAmmCancelParams {
                 proof_a: solana_proof.proof_a,
                 proof_b: solana_proof.proof_b,
                 proof_c: solana_proof.proof_c,
                 public_signals: public_inputs_arr,
             },
+            data,
             account_metas: 
                 DarklakeAmmCancel {
                     caller: *settle_signer,
@@ -512,18 +520,14 @@ impl Amm for DarklakeAmm {
         let caller_token_account_wsol = self.get_user_token_account(*settle_signer, native_mint::ID, spl_token::ID);
         let order = self.get_order(*order_owner);
     
+        let discriminator = [204, 141, 18, 161, 8, 177, 92, 142];
+
+        let data = discriminator.to_vec();
+
         Ok(SlashAndAccountMetas {
-            discriminator: [
-                204,
-                141,
-                18,
-                161,
-                8,
-                177,
-                92,
-                142
-              ],
+            discriminator,
             slash: DarklakeAmmSlashParams {},
+            data,
             account_metas: 
                 DarklakeAmmSlash {
                     caller: *settle_signer,
@@ -550,6 +554,57 @@ impl Amm for DarklakeAmm {
                 .into()
         })
     }
+
+    fn get_finalize_and_account_metas(&self, finalize_params: &FinalizeParams) -> Result<FinalizeAndAccountMetas> {
+        let FinalizeParams {
+            settle_signer,
+            order_owner,
+            unwrap_wsol,
+            min_out,
+            salt,
+            output,
+            commitment,
+            deadline,
+            current_slot,
+        } = finalize_params;
+
+        // check if settle or cancel or slash
+        let is_settle = *min_out <= *output;
+        let is_slash = *current_slot > *deadline;
+
+        if is_slash {
+            return Ok(FinalizeAndAccountMetas::Slash(self.get_slash_and_account_metas(&SlashParams {
+                settle_signer: *settle_signer,
+                order_owner: *order_owner,
+                deadline: *deadline,
+                current_slot: *current_slot,
+            })?));
+        } else if is_settle {
+            return Ok(FinalizeAndAccountMetas::Settle(self.get_settle_and_account_metas(&SettleParams {
+                settle_signer: *settle_signer,
+                order_owner: *order_owner,
+                unwrap_wsol: *unwrap_wsol,
+                min_out: *min_out,
+                salt: *salt,
+                output: *output,
+                commitment: *commitment,
+                deadline: *deadline,
+                current_slot: *current_slot,
+            })?));
+        } else {
+            return Ok(FinalizeAndAccountMetas::Cancel(self.get_cancel_and_account_metas(&CancelParams {
+                settle_signer: *settle_signer,
+                order_owner: *order_owner,
+                min_out: *min_out,
+                salt: *salt,
+                output: *output,
+                commitment: *commitment,
+                deadline: *deadline,
+                current_slot: *current_slot,
+            })?));
+        }
+    }
+
 }
 
 pub struct DarklakeAmmSwap {

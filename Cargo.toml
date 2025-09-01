@@ -1,7 +1,7 @@
 [workspace]
 members = [
     "darklake-sdk",
-    "examples"
+    "darklake-sdk-examples"
 ]
 resolver = "2"
 
