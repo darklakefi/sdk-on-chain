@@ -31,3 +31,9 @@ spl-token-2022 = { version = "9", features = ["no-entrypoint"] }
 # Dev dependencies
 tokio = { version = "1", features = ["full"] }
 assert_matches = "1.5.0"
+
+[workspace.dev-dependencies]
+cargo-husky = "1.5.0"
+
+[workspace.metadata.husky]
+precommit = "sh .githooks/pre-commit"
