@@ -185,7 +185,6 @@ async fn manual_order_finalize() -> Result<()> {
 
     // param examples
 
-    
     let settle_params = SettleParams {
         settle_signer: user_keypair.pubkey(),
         order_owner: user_keypair.pubkey(),
