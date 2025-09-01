@@ -36,6 +36,7 @@ fn load_wallet_key() -> Result<Keypair> {
     Ok(keypair)
 }
 
+
 async fn manual_order_finalize() -> Result<()> {
     println!("Darklake DEX SDK - Complete Example");
     println!("===================================");
