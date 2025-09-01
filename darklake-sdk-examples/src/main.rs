@@ -17,6 +17,7 @@ use serde_json;
 // Default Solana devnet endpoint
 const DEVNET_ENDPOINT: &str = "https://api.devnet.solana.com";
 
+
 /// Load wallet keypair from key.json file
 fn load_wallet_key() -> Result<Keypair> {
     let key_path = format!("{}/key.json", env!("CARGO_MANIFEST_DIR"));
