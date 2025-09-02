@@ -1599,21 +1599,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "darklake-examples"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "base64 0.21.7",
- "darklake-sdk",
- "serde_json",
- "solana-rpc-client",
- "solana-rpc-client-api",
- "solana-sdk",
- "solana-transaction-status",
- "tokio",
-]
-
-[[package]]
 name = "darklake-sdk"
 version = "0.1.0"
 dependencies = [
@@ -1648,6 +1633,21 @@ dependencies = [
  "spl-associated-token-account",
  "spl-token",
  "spl-token-2022 9.0.0",
+ "tokio",
+]
+
+[[package]]
+name = "darklake-sdk-examples"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "base64 0.21.7",
+ "darklake-sdk",
+ "serde_json",
+ "solana-rpc-client",
+ "solana-rpc-client-api",
+ "solana-sdk",
+ "solana-transaction-status",
  "tokio",
 ]
 

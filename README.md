@@ -1,6 +1,6 @@
 # Darklake AMM Implementation
 
-A complete implementation of the Darklake Automated Market Maker (AMM) system on Solana, featuring zero-knowledge proof-based order settlement, cancellation, and slashing mechanisms.
+A complete implementation of the Darklake Automated Market Maker (AMM) system on Solana, featuring zero-knowledge proof-based order settlement, cancellation, and slashing mechanisms with an intelligent finalization helper.
 
 ## 🏗️ Architecture Overview
 
@@ -9,6 +9,8 @@ Darklake AMM is a sophisticated decentralized exchange that uses zero-knowledge 
 1. **Swap Phase**: Users submit orders with encrypted parameters
 2. **Settlement Phase**: Orders are settled using ZK proofs when conditions are met
 3. **Management Phase**: Orders can be cancelled or slashed based on various conditions
+
+**🆕 New Feature**: The system now includes an intelligent `finalize` helper that automatically determines the appropriate action (settle, cancel, or slash) based on order conditions, eliminating the need for manual decision logic.
 
 ## 🔑 Prerequisites
 
@@ -98,7 +100,46 @@ let swap_signature = rpc_client.send_and_confirm_transaction(&swap_transaction)?
 
 ### 4. Order Lifecycle Management
 
-After a swap order is created, it enters one of three possible paths:
+**🆕 Simplified Approach**: Use the new `finalize` helper that automatically determines the appropriate action:
+
+```rust
+// The finalize helper automatically determines whether to settle, cancel, or slash
+let finalize_params = FinalizeParams {
+    settle_signer: user_keypair.pubkey(),
+    order_owner: user_keypair.pubkey(),
+    unwrap_wsol: true,
+    min_out: swap_params.min_out,
+    salt: swap_params.salt,
+    output: order_output,
+    commitment: swap_commitment,
+    deadline: order_deadline,
+    current_slot: rpc_client.get_slot()?,
+};
+
+let finalize_result = darklake_amm.get_finalize_and_account_metas(&finalize_params)?;
+
+// The data field is now pre-serialized - no manual construction needed!
+let transaction_data = finalize_result.data();
+let account_metas = finalize_result.account_metas();
+
+// Build and send the finalization transaction
+let finalize_instruction = Instruction {
+    program_id: darklake_amm.program_id(),
+    accounts: account_metas,
+    data: transaction_data,
+};
+
+let finalize_transaction = Transaction::new_signed_with_payer(
+    &[finalize_instruction],
+    Some(&user_keypair.pubkey()),
+    &[&user_keypair],
+    recent_blockhash,
+);
+
+let finalize_signature = rpc_client.send_and_confirm_transaction(&finalize_transaction)?;
+```
+
+**🔄 Legacy Manual Approach**: For users who prefer explicit control, the individual methods are still available:
 
 #### Path A: Order Expiration (Slash)
 ```rust
@@ -123,7 +164,20 @@ while !is_outdated {
 // Execute slash transaction
 if is_outdated {
     let slash_and_account_metas = darklake_amm.get_slash_and_account_metas(&slash_params)?;
-    // ... build and send slash transaction
+    
+    // 🆕 Data is now pre-serialized - use it directly!
+    let slash_transaction = Transaction::new_signed_with_payer(
+        &[Instruction {
+            program_id: darklake_amm.program_id(),
+            accounts: slash_and_account_metas.account_metas,
+            data: slash_and_account_metas.data, // Pre-serialized data
+        }],
+        Some(&user_keypair.pubkey()),
+        &[&user_keypair],
+        recent_blockhash,
+    );
+    
+    let slash_signature = rpc_client.send_and_confirm_transaction(&slash_transaction)?;
 }
 ```
 
@@ -135,15 +189,19 @@ if is_cancel {
     println!("Cancelling order -------|");
     let cancel_and_account_metas = darklake_amm.get_cancel_and_account_metas(&cancel_params)?;
     
-    // Build cancel transaction with ZK proofs
-    let mut data = cancel_and_account_metas.discriminator.to_vec();
-    data.extend_from_slice(&cancel_and_account_metas.cancel.proof_a);
-    data.extend_from_slice(&cancel_and_account_metas.cancel.proof_b);
-    data.extend_from_slice(&cancel_and_account_metas.cancel.proof_c);
-    data.extend_from_slice(&cancel_and_account_metas.cancel.public_signals[0]);
-    data.extend_from_slice(&cancel_and_account_metas.cancel.public_signals[1]);
+    // 🆕 Data is now pre-serialized - no manual construction needed!
+    let cancel_transaction = Transaction::new_signed_with_payer(
+        &[Instruction {
+            program_id: darklake_amm.program_id(),
+            accounts: cancel_and_account_metas.account_metas,
+            data: cancel_and_account_metas.data, // Pre-serialized data
+        }],
+        Some(&user_keypair.pubkey()),
+        &[&user_keypair],
+        recent_blockhash,
+    );
     
-    // ... build and send cancel transaction
+    let cancel_signature = rpc_client.send_and_confirm_transaction(&cancel_transaction)?;
 }
 ```
 
@@ -154,16 +212,19 @@ println!("Settling order ------->");
 // Get settle instruction with ZK proofs
 let settle_and_account_metas = darklake_amm.get_settle_and_account_metas(&settle_params)?;
 
-// Build settle transaction
-let mut data = settle_and_account_metas.discriminator.to_vec();
-data.extend_from_slice(&settle_and_account_metas.settle.proof_a);
-data.extend_from_slice(&settle_and_account_metas.settle.proof_b);
-data.extend_from_slice(&settle_and_account_metas.settle.proof_c);
-data.extend_from_slice(&settle_and_account_metas.settle.public_signals[0]);
-data.extend_from_slice(&settle_and_account_metas.settle.public_signals[1]);
-data.extend_from_slice(&[settle_and_account_metas.settle.unwrap_wsol as u8]);
+// 🆕 Data is now pre-serialized - no manual construction needed!
+let settle_transaction = Transaction::new_signed_with_payer(
+    &[Instruction {
+        program_id: darklake_amm.program_id(),
+        accounts: settle_and_account_metas.account_metas,
+        data: settle_and_account_metas.data, // Pre-serialized data
+    }],
+    Some(&user_keypair.pubkey()),
+    &[&user_keypair],
+    recent_blockhash,
+);
 
-// ... build and send settle transaction
+let settle_signature = rpc_client.send_and_confirm_transaction(&settle_transaction)?;
 ```
 
 ## 🔧 Key Parameters Explained
@@ -174,6 +235,16 @@ data.extend_from_slice(&[settle_and_account_metas.settle.unwrap_wsol as u8]);
 - **`in_amount`**: Amount of source tokens to swap
 - **`min_out`**: Minimum amount of destination tokens to receive (slippage protection)
 - **`salt`**: Unique 8-byte identifier for the order
+
+### Finalize Parameters (🆕)
+- **`settle_signer`**: Public key of the account signing the finalization transaction
+- **`order_owner`**: Public key of the order owner
+- **`unwrap_wsol`**: Whether to unwrap wrapped SOL after settlement (only used for settle operations)
+- **`min_out`**: Same as swap min_out (ensures consistency)
+- **`output`**: Expected output amount (calculated from order data)
+- **`commitment`**: Cryptographic commitment from the swap
+- **`deadline`**: Order expiration timestamp
+- **`current_slot`**: Current Solana slot number
 
 ### Settle Parameters
 - **`settle_signer`**: Public key of the account signing the settle transaction
@@ -214,6 +285,8 @@ The system uses Groth16 ZK proofs for:
 
 ## 🚦 Decision Flow Logic
 
+**🆕 Enhanced with Finalize Helper**:
+
 ```
 Swap Order Created
         ↓
@@ -228,6 +301,36 @@ Swap Order Created
 │ - Simple data   │ - Complex data  │ - Complex data  │
 │ - Immediate     │ - Immediate     │ - Immediate     │
 └─────────────────┴─────────────────┴─────────────────┘
+
+🆕 NEW: Use finalize() helper to automatically choose the right path!
+```
+
+## 🆕 New Features
+
+### 1. Finalize Helper
+The `get_finalize_and_account_metas()` method automatically determines whether an order should be:
+- **Settled**: When `min_out <= output` and order hasn't expired
+- **Cancelled**: When `min_out > output` and order hasn't expired  
+- **Slashed**: When order has expired (`current_slot > deadline`)
+
+### 2. Pre-serialized Data
+All transaction data is now pre-serialized in the `data` field, eliminating the need for manual byte array construction:
+- **Before**: Users had to manually concatenate discriminator, proofs, and public signals
+- **After**: Simply use `finalize_result.data()` directly in the transaction
+
+### 3. Simplified API
+```rust
+// Old way (still supported)
+let settle_result = darklake_amm.get_settle_and_account_metas(&settle_params)?;
+let mut data = settle_result.discriminator.to_vec();
+data.extend_from_slice(&settle_result.settle.proof_a);
+data.extend_from_slice(&settle_result.settle.proof_b);
+data.extend_from_slice(&settle_result.settle.proof_c);
+// ... more manual construction
+
+// New way (recommended)
+let finalize_result = darklake_amm.get_finalize_and_account_metas(&finalize_params)?;
+let data = finalize_result.data(); // Ready to use!
 ```
 
 ## 🛠️ Development Setup
@@ -271,6 +374,8 @@ The example demonstrates three main scenarios:
 2. **Slippage Cancellation**: Cancels orders that exceed slippage tolerance
 3. **Successful Settlement**: Settles orders that meet all conditions
 
+**🆕 New**: All scenarios can now be handled with a single `finalize` call!
+
 ## 🌐 Network Configuration
 
 - **Default**: Solana Devnet (`https://api.devnet.solana.com`)
@@ -292,6 +397,7 @@ The SDK provides access to:
 - **Slippage Protection**: Automatic cancellation if output falls below minimum
 - **Expiration Handling**: Automatic slashing of expired orders
 - **Commitment Verification**: Cryptographic verification of order parameters
+- **🆕 Intelligent Finalization**: Automatic action selection based on order state
 
 ## 🚨 Error Handling
 
@@ -300,6 +406,7 @@ The SDK uses `anyhow` for comprehensive error handling:
 - Account data parsing errors
 - Transaction signing failures
 - ZK proof generation errors
+- **🆕 Finalization decision errors**
 
 ## 📈 Performance Considerations
 
@@ -307,6 +414,7 @@ The SDK uses `anyhow` for comprehensive error handling:
 - **Proof Generation**: ZK proofs are generated on-demand
 - **Transaction Batching**: Multiple operations can be batched in single transactions
 - **Async Operations**: Uses Tokio for non-blocking I/O
+- **🆕 Pre-serialized Data**: Eliminates runtime serialization overhead
 
 ## 🤝 Contributing
 
@@ -331,3 +439,5 @@ For issues and questions:
 ---
 
 **Note**: This implementation is for educational and development purposes. Always test thoroughly on devnet before using on mainnet.
+
+**🆕 Latest Updates**: The SDK now includes an intelligent finalization helper and pre-serialized transaction data for simplified order lifecycle management.

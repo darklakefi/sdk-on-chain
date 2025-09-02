@@ -62,6 +62,9 @@ pub trait Amm: Send + Sync {
 
     /// Get slash parameters and account metadata
     fn get_slash_and_account_metas(&self, slash_params: &SlashParams) -> Result<SlashAndAccountMetas>;
+
+    // helper
+    fn get_finalize_and_account_metas(&self, finalize_params: &FinalizeParams) -> Result<FinalizeAndAccountMetas>;
 }
 
 /// Account map for storing account data
@@ -104,8 +107,6 @@ pub struct Quote {
 pub struct SwapParams {
     pub source_mint: Pubkey,
     pub destination_mint: Pubkey,
-    pub source_token_account: Pubkey,
-    pub destination_token_account: Pubkey,
     pub token_transfer_authority: Pubkey,
     pub in_amount: u64,
     pub swap_mode: SwapMode,
@@ -149,11 +150,26 @@ pub struct SlashParams {
     pub current_slot: u64,
 }
 
+/// Finalize parameters
+#[derive(Debug, Clone)]
+pub struct FinalizeParams {
+    pub settle_signer: Pubkey,
+    pub order_owner: Pubkey,
+    pub unwrap_wsol: bool,
+    pub min_out: u64,
+    pub salt: [u8; 8],
+    pub output: u64,
+    pub commitment: [u8; 32],
+    pub deadline: u64,
+    pub current_slot: u64,
+}
+
 /// Swap result with account metadata
 #[derive(Debug, Clone)]
 pub struct SwapAndAccountMetas {
     pub discriminator: [u8; 8],
     pub swap: DarklakeAmmSwapParams,
+    pub data: Vec<u8>,
     pub account_metas: Vec<AccountMeta>,
 }
 
@@ -162,6 +178,7 @@ pub struct SwapAndAccountMetas {
 pub struct SettleAndAccountMetas {
     pub discriminator: [u8; 8],
     pub settle: DarklakeAmmSettleParams,
+    pub data: Vec<u8>,
     pub account_metas: Vec<AccountMeta>,
 }
 
@@ -170,7 +187,43 @@ pub struct SettleAndAccountMetas {
 pub struct CancelAndAccountMetas {
     pub discriminator: [u8; 8],
     pub cancel: DarklakeAmmCancelParams,
+    pub data: Vec<u8>,
     pub account_metas: Vec<AccountMeta>,
+}
+
+/// Finalize result with account metadata
+
+#[derive(Debug, Clone)]
+pub enum FinalizeAndAccountMetas {
+    Settle(SettleAndAccountMetas),
+    Cancel(CancelAndAccountMetas),
+    Slash(SlashAndAccountMetas),
+}
+
+impl FinalizeAndAccountMetas {
+    pub fn data(&self) -> Vec<u8> {
+        match self {
+            FinalizeAndAccountMetas::Settle(settle) => settle.data.clone(),
+            FinalizeAndAccountMetas::Cancel(cancel) => cancel.data.clone(),
+            FinalizeAndAccountMetas::Slash(slash) => slash.data.clone(),
+        }
+    }
+
+    pub fn account_metas(&self) -> Vec<AccountMeta> {
+        match self {
+            FinalizeAndAccountMetas::Settle(settle) => settle.account_metas.clone(),
+            FinalizeAndAccountMetas::Cancel(cancel) => cancel.account_metas.clone(),
+            FinalizeAndAccountMetas::Slash(slash) => slash.account_metas.clone(),
+        }
+    }
+
+    pub fn discriminator(&self) -> [u8; 8] {
+        match self {
+            FinalizeAndAccountMetas::Settle(settle) => settle.discriminator,
+            FinalizeAndAccountMetas::Cancel(cancel) => cancel.discriminator,
+            FinalizeAndAccountMetas::Slash(slash) => slash.discriminator,
+        }
+    }
 }
 
 /// Slash result with account metadata
@@ -179,6 +232,7 @@ pub struct CancelAndAccountMetas {
 pub struct SlashAndAccountMetas {
     pub discriminator: [u8; 8],
     pub slash: DarklakeAmmSlashParams,
+    pub data: Vec<u8>,
     pub account_metas: Vec<AccountMeta>,
 }
 
