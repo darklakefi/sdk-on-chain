@@ -1106,6 +1106,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "cargo-husky"
+version = "1.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7b02b629252fe8ef6460461409564e2c21d0c8e77e0944f3d189ff06c4e932ad"
+
+[[package]]
 name = "cc"
 version = "1.2.34"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1624,11 +1630,11 @@ dependencies = [
  "poseidon-ark",
  "rust_decimal",
  "serde_json",
- "solana-account-decoder 2.3.7",
+ "solana-account-decoder",
  "solana-rpc-client",
  "solana-rpc-client-api",
  "solana-sdk",
- "solana-sdk-ids 2.2.1",
+ "solana-sdk-ids 3.0.0",
  "solana-system-interface 1.0.0",
  "spl-associated-token-account",
  "spl-token",
@@ -1642,6 +1648,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "base64 0.21.7",
+ "cargo-husky",
  "darklake-sdk",
  "serde_json",
  "solana-rpc-client",
@@ -3099,16 +3106,6 @@ dependencies = [
  "elliptic-curve",
  "once_cell",
  "sha2 0.10.9",
-]
-
-[[package]]
-name = "kaigan"
-version = "0.2.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2ba15de5aeb137f0f65aa3bf82187647f1285abfe5b20c80c2c37f7007ad519a"
-dependencies = [
- "borsh 0.10.4",
- "serde",
 ]
 
 [[package]]
@@ -4958,49 +4955,6 @@ dependencies = [
 
 [[package]]
 name = "solana-account-decoder"
-version = "2.3.7"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a5963fbe3e1099613c270fd5ebc0ff5c6e88a2bea2505b6e348daa0466282cd6"
-dependencies = [
- "Inflector",
- "base64 0.22.1",
- "bincode",
- "bs58",
- "bv",
- "serde",
- "serde_derive",
- "serde_json",
- "solana-account 2.2.1",
- "solana-account-decoder-client-types 2.3.7",
- "solana-address-lookup-table-interface 2.2.2",
- "solana-clock 2.2.2",
- "solana-config-program-client",
- "solana-epoch-schedule 2.2.1",
- "solana-fee-calculator 2.2.1",
- "solana-instruction 2.3.0",
- "solana-loader-v3-interface 5.0.0",
- "solana-nonce 2.2.1",
- "solana-program-option 2.2.1",
- "solana-program-pack 2.2.1",
- "solana-pubkey 2.4.0",
- "solana-rent 2.2.1",
- "solana-sdk-ids 2.2.1",
- "solana-slot-hashes 2.2.1",
- "solana-slot-history 2.2.1",
- "solana-stake-interface 1.2.1",
- "solana-sysvar 2.3.0",
- "solana-vote-interface 2.2.6",
- "spl-generic-token 1.0.1",
- "spl-token",
- "spl-token-2022 8.0.1",
- "spl-token-group-interface 0.6.0",
- "spl-token-metadata-interface 0.7.0",
- "thiserror 2.0.16",
- "zstd",
-]
-
-[[package]]
-name = "solana-account-decoder"
 version = "3.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "79b33c627d2568893942cc1c11c61b9f02967c3ce256d352eacf8b3d0975d91d"
@@ -5342,19 +5296,6 @@ dependencies = [
  "solana-sdk-ids 3.0.0",
  "solana-short-vec 3.0.0",
  "solana-system-interface 2.0.0",
-]
-
-[[package]]
-name = "solana-config-program-client"
-version = "0.0.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "53aceac36f105fd4922e29b4f0c1f785b69d7b3e7e387e384b8985c8e0c3595e"
-dependencies = [
- "bincode",
- "borsh 0.10.4",
- "kaigan",
- "serde",
- "solana-program",
 ]
 
 [[package]]
@@ -7271,7 +7212,7 @@ dependencies = [
  "serde",
  "serde_derive",
  "serde_json",
- "solana-account-decoder 3.0.0",
+ "solana-account-decoder",
  "solana-address-lookup-table-interface 3.0.0",
  "solana-clock 3.0.0",
  "solana-hash 3.0.0",

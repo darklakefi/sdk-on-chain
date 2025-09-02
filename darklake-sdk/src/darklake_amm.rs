@@ -2,16 +2,23 @@ use anchor_lang::prelude::*;
 
 use crate::amm::*;
 
-use crate::math::{get_transfer_fee, swap, rebalance_pool_ratio, SwapResultWithFromToLock};
-use crate::proof::proof_generator::{convert_proof_to_solana_proof, from_32_byte_buffer, generate_proof, to_32_byte_buffer, PrivateProofInputs, PublicProofInputs};
-use crate::proof::utils::{bytes_to_bigint, compute_poseidon_hash_with_salt, u64_array_to_u8_array_le};
+use crate::math::{get_transfer_fee, rebalance_pool_ratio, swap, SwapResultWithFromToLock};
+use crate::proof::proof_generator::{
+    convert_proof_to_solana_proof, from_32_byte_buffer, generate_proof, to_32_byte_buffer,
+    PrivateProofInputs, PublicProofInputs,
+};
+use crate::proof::utils::{
+    bytes_to_bigint, compute_poseidon_hash_with_salt, u64_array_to_u8_array_le,
+};
 
 use anchor_lang::{system_program, AnchorDeserialize, AnchorSerialize};
-use solana_sdk::{program_pack::Pack, pubkey, pubkey::Pubkey};
+use anyhow::{bail, Context, Result};
 use rust_decimal::Decimal;
-use anyhow::{Result, bail, Context};
+use solana_sdk::{program_pack::Pack, pubkey, pubkey::Pubkey};
 use spl_token::{native_mint, state::Account as SplTokenAccount};
-use spl_token_2022::extension::{transfer_fee::TransferFeeConfig, BaseStateWithExtensions, StateWithExtensions};
+use spl_token_2022::extension::{
+    transfer_fee::TransferFeeConfig, BaseStateWithExtensions, StateWithExtensions,
+};
 
 #[derive(Clone)]
 pub struct DarklakeAmm {
@@ -72,7 +79,6 @@ pub struct Order {
     pub padding: [u64; 4],
 }
 
-
 #[derive(AnchorSerialize, AnchorDeserialize, Clone)]
 pub struct Pool {
     // pubkeys
@@ -109,57 +115,60 @@ impl Amm for DarklakeAmm {
         "Darklake".to_string()
     }
 
-    fn from_keyed_account(keyed_account: &KeyedAccount) -> Result<Self> 
+    fn from_keyed_account(keyed_account: &KeyedAccount) -> Result<Self>
     where
-        Self: Sized {
-            Ok(DarklakeAmm {
-                key: keyed_account.key,
-                pool: Pool::deserialize(&mut &keyed_account.account.data[8..])?,
-                amm_config: AmmConfig {
-                    trade_fee_rate: 0,
-                    create_pool_fee: 0,
-                    protocol_fee_rate: 0,
-                    wsol_trade_deposit: 0,
-                    deadline_slot_duration: 0,
-                    ratio_change_tolerance_rate: 0,
-                    bump: 0,
-                    halted: false,
-                    padding: [0; 16],
-                },
-                reserve_x_balance: 0,
-                reserve_y_balance: 0,
-                token_x_owner: Pubkey::default(),
-                token_y_owner: Pubkey::default(),
-                token_x_transfer_fee_config: None,
-                token_y_transfer_fee_config: None,
-            })
-        }
+        Self: Sized,
+    {
+        Ok(DarklakeAmm {
+            key: keyed_account.key,
+            pool: Pool::deserialize(&mut &keyed_account.account.data[8..])?,
+            amm_config: AmmConfig {
+                trade_fee_rate: 0,
+                create_pool_fee: 0,
+                protocol_fee_rate: 0,
+                wsol_trade_deposit: 0,
+                deadline_slot_duration: 0,
+                ratio_change_tolerance_rate: 0,
+                bump: 0,
+                halted: false,
+                padding: [0; 16],
+            },
+            reserve_x_balance: 0,
+            reserve_y_balance: 0,
+            token_x_owner: Pubkey::default(),
+            token_y_owner: Pubkey::default(),
+            token_x_transfer_fee_config: None,
+            token_y_transfer_fee_config: None,
+        })
+    }
 
     fn program_id(&self) -> Pubkey {
         DARKLAKE_PROGRAM_ID
     }
-    
+
     fn key(&self) -> Pubkey {
         self.key
     }
-    
+
     fn get_reserve_mints(&self) -> Vec<Pubkey> {
         vec![self.pool.token_mint_x, self.pool.token_mint_y]
     }
-    
+
     fn get_accounts_to_update(&self) -> Vec<Pubkey> {
         vec![
             self.key,
             self.pool.token_mint_x, // tokens
             self.pool.token_mint_y,
-            self.pool.reserve_x,    // pool token reserves
+            self.pool.reserve_x, // pool token reserves
             self.pool.reserve_y,
-            self.pool.amm_config,   // config with fee values
+            self.pool.amm_config, // config with fee values
         ]
     }
-    
+
     fn update(&mut self, account_map: &AccountMap) -> Result<()> {
-        let account = account_map.get(&self.key).context("Darklake pool account not found")?;
+        let account = account_map
+            .get(&self.key)
+            .context("Darklake pool account not found")?;
 
         self.pool = Pool::deserialize(&mut &account.data[8..])?;
 
@@ -167,16 +176,24 @@ impl Amm for DarklakeAmm {
         let amm_config = AmmConfig::deserialize(&mut &amm_config_data[8..])?;
 
         self.amm_config = amm_config;
-        
-        let (token_x_data, token_x_owner) = try_get_account_data_and_owner(account_map, &self.pool.reserve_x)?;
-        let (token_y_data, token_y_owner) = try_get_account_data_and_owner(account_map, &self.pool.reserve_y)?;
+
+        let (token_x_data, token_x_owner) =
+            try_get_account_data_and_owner(account_map, &self.pool.reserve_x)?;
+        let (token_y_data, token_y_owner) =
+            try_get_account_data_and_owner(account_map, &self.pool.reserve_y)?;
 
         // Parse token account balances reliably for both SPL and Token2022 tokens
-        self.reserve_x_balance = Self::parse_token_account_balance(&token_x_data, &token_x_owner, &self.pool.reserve_x)?;
-        self.reserve_y_balance = Self::parse_token_account_balance(&token_y_data, &token_y_owner, &self.pool.reserve_y)?;
+        self.reserve_x_balance =
+            Self::parse_token_account_balance(&token_x_data, &token_x_owner, &self.pool.reserve_x)?;
+        self.reserve_y_balance =
+            Self::parse_token_account_balance(&token_y_data, &token_y_owner, &self.pool.reserve_y)?;
 
-        self.token_x_transfer_fee_config = self.get_transfer_fee_config(&token_x_data, token_x_owner).unwrap_or(None);
-        self.token_y_transfer_fee_config = self.get_transfer_fee_config(&token_y_data, token_y_owner).unwrap_or(None);
+        self.token_x_transfer_fee_config = self
+            .get_transfer_fee_config(&token_x_data, token_x_owner)
+            .unwrap_or(None);
+        self.token_y_transfer_fee_config = self
+            .get_transfer_fee_config(&token_y_data, token_y_owner)
+            .unwrap_or(None);
 
         self.token_x_owner = *token_x_owner;
         self.token_y_owner = *token_y_owner;
@@ -187,14 +204,19 @@ impl Amm for DarklakeAmm {
     fn supports_exact_out(&self) -> bool {
         false
     }
-    
+
     fn quote(&self, quote_params: &QuoteParams) -> Result<Quote> {
         let swap_mode = quote_params.swap_mode;
         if swap_mode != SwapMode::ExactIn {
             bail!("Exact out not supported");
         }
 
-        self.quote_internal(quote_params, &self.amm_config, self.reserve_x_balance, self.reserve_y_balance)
+        self.quote_internal(
+            quote_params,
+            &self.amm_config,
+            self.reserve_x_balance,
+            self.reserve_y_balance,
+        )
     }
 
     fn get_swap_and_account_metas(&self, swap_params: &SwapParams) -> Result<SwapAndAccountMetas> {
@@ -208,15 +230,24 @@ impl Amm for DarklakeAmm {
         let authority = self.get_authority();
         let is_swap_x_to_y = swap_params.source_mint == self.pool.token_mint_x;
 
-        let user_token_account_wsol = self.get_user_token_account(*token_transfer_authority, native_mint::ID, spl_token::ID);
-        let user_token_account_x = self.get_user_token_account(*token_transfer_authority, self.pool.token_mint_x, self.token_x_owner);
-        let user_token_account_y = self.get_user_token_account(*token_transfer_authority, self.pool.token_mint_y, self.token_y_owner);
+        let user_token_account_wsol =
+            self.get_user_token_account(*token_transfer_authority, native_mint::ID, spl_token::ID);
+        let user_token_account_x = self.get_user_token_account(
+            *token_transfer_authority,
+            self.pool.token_mint_x,
+            self.token_x_owner,
+        );
+        let user_token_account_y = self.get_user_token_account(
+            *token_transfer_authority,
+            self.pool.token_mint_y,
+            self.token_y_owner,
+        );
 
         let pool_wsol_reserve = self.get_pool_wsol_reserve();
         let order = self.get_order(*token_transfer_authority);
-        
+
         // ADD C_MIN COMMITMENT CALCULATION HERE
-        
+
         let commitment = to_32_byte_buffer(&bytes_to_bigint(&u64_array_to_u8_array_le(
             &compute_poseidon_hash_with_salt(*min_out, *salt),
         )));
@@ -236,32 +267,31 @@ impl Amm for DarklakeAmm {
                 c_min: commitment,
             },
             data,
-            account_metas: 
-                DarklakeAmmSwap {
-                    user: *token_transfer_authority,
-                    token_mint_x: self.pool.token_mint_x,
-                    token_mint_y: self.pool.token_mint_y,
-                    token_mint_wsol: native_mint::ID,
-                    pool: self.key,
-                    authority,
-                    amm_config: self.pool.amm_config,
-                    user_token_account_x,
-                    user_token_account_y,
-                    user_token_account_wsol,
-                    pool_token_reserve_x: self.pool.reserve_x,
-                    pool_token_reserve_y: self.pool.reserve_y,
-                    pool_wsol_reserve,
-                    order,
-                    associated_token_program: spl_associated_token_account::ID,
-                    system_program: system_program::ID,
-                    token_mint_x_program: self.token_x_owner,
-                    token_mint_y_program: self.token_y_owner,
-                    token_program: spl_token::ID,
-                }
-                .into()
+            account_metas: DarklakeAmmSwap {
+                user: *token_transfer_authority,
+                token_mint_x: self.pool.token_mint_x,
+                token_mint_y: self.pool.token_mint_y,
+                token_mint_wsol: native_mint::ID,
+                pool: self.key,
+                authority,
+                amm_config: self.pool.amm_config,
+                user_token_account_x,
+                user_token_account_y,
+                user_token_account_wsol,
+                pool_token_reserve_x: self.pool.reserve_x,
+                pool_token_reserve_y: self.pool.reserve_y,
+                pool_wsol_reserve,
+                order,
+                associated_token_program: spl_associated_token_account::ID,
+                system_program: system_program::ID,
+                token_mint_x_program: self.token_x_owner,
+                token_mint_y_program: self.token_y_owner,
+                token_program: spl_token::ID,
+            }
+            .into(),
         })
     }
-    
+
     fn clone_amm(&self) -> Box<dyn Amm + Send + Sync> {
         Box::new(self.clone())
     }
@@ -290,7 +320,10 @@ impl Amm for DarklakeAmm {
     }
 
     // both for settle
-    fn get_settle_and_account_metas(&self, settle_params: &SettleParams) -> Result<SettleAndAccountMetas> {
+    fn get_settle_and_account_metas(
+        &self,
+        settle_params: &SettleParams,
+    ) -> Result<SettleAndAccountMetas> {
         let SettleParams {
             settle_signer,
             order_owner,
@@ -310,12 +343,16 @@ impl Amm for DarklakeAmm {
         let authority = self.get_authority();
 
         let pool_wsol_reserve = self.get_pool_wsol_reserve();
-        
-        let user_token_account_wsol = self.get_user_token_account(*order_owner, native_mint::ID, spl_token::ID);
-        let user_token_account_x = self.get_user_token_account(*order_owner, self.pool.token_mint_x, self.token_x_owner);
-        let user_token_account_y = self.get_user_token_account(*order_owner, self.pool.token_mint_y, self.token_y_owner);
 
-        let caller_token_account_wsol = self.get_user_token_account(*settle_signer, native_mint::ID, spl_token::ID);
+        let user_token_account_wsol =
+            self.get_user_token_account(*order_owner, native_mint::ID, spl_token::ID);
+        let user_token_account_x =
+            self.get_user_token_account(*order_owner, self.pool.token_mint_x, self.token_x_owner);
+        let user_token_account_y =
+            self.get_user_token_account(*order_owner, self.pool.token_mint_y, self.token_y_owner);
+
+        let caller_token_account_wsol =
+            self.get_user_token_account(*settle_signer, native_mint::ID, spl_token::ID);
         let order = self.get_order(*order_owner);
         let order_token_account_wsol = self.get_order_token_account_wsol(*order_owner);
 
@@ -323,16 +360,15 @@ impl Amm for DarklakeAmm {
             min_out: *min_out,
             salt: u64::from_le_bytes(*salt),
         };
-    
+
         let public_inputs = PublicProofInputs {
             real_out: *output,
             commitment: from_32_byte_buffer(&commitment),
         };
-    
+
         // ADD PROOF CALCULATION HERE
-        let (proof, _) =
-            generate_proof(&private_inputs, &public_inputs, false)
-                .map_err(|e| anyhow::anyhow!("Failed to generate proof: {}", e))?;
+        let (proof, _) = generate_proof(&private_inputs, &public_inputs, false)
+            .map_err(|e| anyhow::anyhow!("Failed to generate proof: {}", e))?;
 
         let solana_proof = convert_proof_to_solana_proof(&proof, &public_inputs);
         let public_inputs_vec = solana_proof.public_signals.clone();
@@ -366,37 +402,38 @@ impl Amm for DarklakeAmm {
                 unwrap_wsol: *unwrap_wsol,
             },
             data,
-            account_metas: 
-                DarklakeAmmSettle {
-                    caller: *settle_signer,
-                    order_owner: *order_owner,
-                    token_mint_x: self.pool.token_mint_x,
-                    token_mint_y: self.pool.token_mint_y,
-                    token_mint_wsol: native_mint::ID,
-                    pool: self.key,
-                    authority,
-                    pool_token_reserve_x: self.pool.reserve_x,
-                    pool_token_reserve_y: self.pool.reserve_y,
-                    pool_wsol_reserve,
-                    amm_config: self.pool.amm_config,
-                    user_token_account_x,
-                    user_token_account_y,
-                    user_token_account_wsol,
-                    caller_token_account_wsol,
-                    order,
-                    order_token_account_wsol,
-                    system_program: system_program::ID,
-                    associated_token_program: spl_associated_token_account::ID,
-                    token_mint_x_program: self.token_x_owner,
-                    token_mint_y_program: self.token_y_owner,
-                    token_program: spl_token::ID,
-                }
-                .into()
+            account_metas: DarklakeAmmSettle {
+                caller: *settle_signer,
+                order_owner: *order_owner,
+                token_mint_x: self.pool.token_mint_x,
+                token_mint_y: self.pool.token_mint_y,
+                token_mint_wsol: native_mint::ID,
+                pool: self.key,
+                authority,
+                pool_token_reserve_x: self.pool.reserve_x,
+                pool_token_reserve_y: self.pool.reserve_y,
+                pool_wsol_reserve,
+                amm_config: self.pool.amm_config,
+                user_token_account_x,
+                user_token_account_y,
+                user_token_account_wsol,
+                caller_token_account_wsol,
+                order,
+                order_token_account_wsol,
+                system_program: system_program::ID,
+                associated_token_program: spl_associated_token_account::ID,
+                token_mint_x_program: self.token_x_owner,
+                token_mint_y_program: self.token_y_owner,
+                token_program: spl_token::ID,
+            }
+            .into(),
         })
     }
 
-
-    fn get_cancel_and_account_metas(&self, cancel_params: &CancelParams) -> Result<CancelAndAccountMetas> {
+    fn get_cancel_and_account_metas(
+        &self,
+        cancel_params: &CancelParams,
+    ) -> Result<CancelAndAccountMetas> {
         let CancelParams {
             settle_signer,
             order_owner,
@@ -415,28 +452,31 @@ impl Amm for DarklakeAmm {
         let authority = self.get_authority();
 
         let pool_wsol_reserve = self.get_pool_wsol_reserve();
-        
-        let user_token_account_wsol = self.get_user_token_account(*order_owner, native_mint::ID, spl_token::ID);
-        let user_token_account_x = self.get_user_token_account(*order_owner, self.pool.token_mint_x, self.token_x_owner);
-        let user_token_account_y = self.get_user_token_account(*order_owner, self.pool.token_mint_y, self.token_y_owner);
 
-        let caller_token_account_wsol = self.get_user_token_account(*settle_signer, native_mint::ID, spl_token::ID);
+        let user_token_account_wsol =
+            self.get_user_token_account(*order_owner, native_mint::ID, spl_token::ID);
+        let user_token_account_x =
+            self.get_user_token_account(*order_owner, self.pool.token_mint_x, self.token_x_owner);
+        let user_token_account_y =
+            self.get_user_token_account(*order_owner, self.pool.token_mint_y, self.token_y_owner);
+
+        let caller_token_account_wsol =
+            self.get_user_token_account(*settle_signer, native_mint::ID, spl_token::ID);
         let order = self.get_order(*order_owner);
 
         let private_inputs = PrivateProofInputs {
             min_out: *min_out,
             salt: u64::from_le_bytes(*salt),
         };
-    
+
         let public_inputs = PublicProofInputs {
             real_out: *output,
             commitment: from_32_byte_buffer(&commitment),
         };
-    
+
         // ADD PROOF CALCULATION HERE
-        let (proof, _) =
-            generate_proof(&private_inputs, &public_inputs, true)
-                .map_err(|e| anyhow::anyhow!("Failed to generate proof: {}", e))?;
+        let (proof, _) = generate_proof(&private_inputs, &public_inputs, true)
+            .map_err(|e| anyhow::anyhow!("Failed to generate proof: {}", e))?;
 
         let solana_proof = convert_proof_to_solana_proof(&proof, &public_inputs);
         let public_inputs_vec = solana_proof.public_signals.clone();
@@ -469,39 +509,40 @@ impl Amm for DarklakeAmm {
                 public_signals: public_inputs_arr,
             },
             data,
-            account_metas: 
-                DarklakeAmmCancel {
-                    caller: *settle_signer,
-                    order_owner: *order_owner,
-                    token_mint_x: self.pool.token_mint_x,
-                    token_mint_y: self.pool.token_mint_y,
-                    token_mint_wsol: native_mint::ID,
-                    pool: self.key,
-                    authority,
-                    pool_token_reserve_x: self.pool.reserve_x,
-                    pool_token_reserve_y: self.pool.reserve_y,
-                    pool_wsol_reserve,
-                    amm_config: self.pool.amm_config,
-                    user_token_account_x,
-                    user_token_account_y,
-                    user_token_account_wsol,
-                    caller_token_account_wsol,
-                    order,
-                    system_program: system_program::ID,
-                    associated_token_program: spl_associated_token_account::ID,
-                    token_mint_x_program: self.token_x_owner,
-                    token_mint_y_program: self.token_y_owner,
-                    token_program: spl_token::ID,
-                }
-                .into()
+            account_metas: DarklakeAmmCancel {
+                caller: *settle_signer,
+                order_owner: *order_owner,
+                token_mint_x: self.pool.token_mint_x,
+                token_mint_y: self.pool.token_mint_y,
+                token_mint_wsol: native_mint::ID,
+                pool: self.key,
+                authority,
+                pool_token_reserve_x: self.pool.reserve_x,
+                pool_token_reserve_y: self.pool.reserve_y,
+                pool_wsol_reserve,
+                amm_config: self.pool.amm_config,
+                user_token_account_x,
+                user_token_account_y,
+                user_token_account_wsol,
+                caller_token_account_wsol,
+                order,
+                system_program: system_program::ID,
+                associated_token_program: spl_associated_token_account::ID,
+                token_mint_x_program: self.token_x_owner,
+                token_mint_y_program: self.token_y_owner,
+                token_program: spl_token::ID,
+            }
+            .into(),
         })
     }
-    
 
-    fn get_slash_and_account_metas(&self, slash_params: &SlashParams) -> Result<SlashAndAccountMetas> {
+    fn get_slash_and_account_metas(
+        &self,
+        slash_params: &SlashParams,
+    ) -> Result<SlashAndAccountMetas> {
         let SlashParams {
             settle_signer,
-            order_owner,    
+            order_owner,
             deadline,
             current_slot,
         } = slash_params;
@@ -513,13 +554,16 @@ impl Amm for DarklakeAmm {
         let authority = self.get_authority();
 
         let pool_wsol_reserve = self.get_pool_wsol_reserve();
-        
-        let user_token_account_x = self.get_user_token_account(*order_owner, self.pool.token_mint_x, self.token_x_owner);
-        let user_token_account_y = self.get_user_token_account(*order_owner, self.pool.token_mint_y, self.token_y_owner);
 
-        let caller_token_account_wsol = self.get_user_token_account(*settle_signer, native_mint::ID, spl_token::ID);
+        let user_token_account_x =
+            self.get_user_token_account(*order_owner, self.pool.token_mint_x, self.token_x_owner);
+        let user_token_account_y =
+            self.get_user_token_account(*order_owner, self.pool.token_mint_y, self.token_y_owner);
+
+        let caller_token_account_wsol =
+            self.get_user_token_account(*settle_signer, native_mint::ID, spl_token::ID);
         let order = self.get_order(*order_owner);
-    
+
         let discriminator = [204, 141, 18, 161, 8, 177, 92, 142];
 
         let data = discriminator.to_vec();
@@ -528,34 +572,36 @@ impl Amm for DarklakeAmm {
             discriminator,
             slash: DarklakeAmmSlashParams {},
             data,
-            account_metas: 
-                DarklakeAmmSlash {
-                    caller: *settle_signer,
-                    order_owner: *order_owner,
-                    token_mint_x: self.pool.token_mint_x,
-                    token_mint_y: self.pool.token_mint_y,
-                    token_mint_wsol: native_mint::ID,
-                    pool: self.key,
-                    authority,
-                    pool_token_reserve_x: self.pool.reserve_x,
-                    pool_token_reserve_y: self.pool.reserve_y,
-                    pool_wsol_reserve,
-                    amm_config: self.pool.amm_config,
-                    user_token_account_x,
-                    user_token_account_y,
-                    caller_token_account_wsol,
-                    order,
-                    system_program: system_program::ID,
-                    associated_token_program: spl_associated_token_account::ID,
-                    token_mint_x_program: self.token_x_owner,
-                    token_mint_y_program: self.token_y_owner,
-                    token_program: spl_token::ID,
-                }
-                .into()
+            account_metas: DarklakeAmmSlash {
+                caller: *settle_signer,
+                order_owner: *order_owner,
+                token_mint_x: self.pool.token_mint_x,
+                token_mint_y: self.pool.token_mint_y,
+                token_mint_wsol: native_mint::ID,
+                pool: self.key,
+                authority,
+                pool_token_reserve_x: self.pool.reserve_x,
+                pool_token_reserve_y: self.pool.reserve_y,
+                pool_wsol_reserve,
+                amm_config: self.pool.amm_config,
+                user_token_account_x,
+                user_token_account_y,
+                caller_token_account_wsol,
+                order,
+                system_program: system_program::ID,
+                associated_token_program: spl_associated_token_account::ID,
+                token_mint_x_program: self.token_x_owner,
+                token_mint_y_program: self.token_y_owner,
+                token_program: spl_token::ID,
+            }
+            .into(),
         })
     }
 
-    fn get_finalize_and_account_metas(&self, finalize_params: &FinalizeParams) -> Result<FinalizeAndAccountMetas> {
+    fn get_finalize_and_account_metas(
+        &self,
+        finalize_params: &FinalizeParams,
+    ) -> Result<FinalizeAndAccountMetas> {
         let FinalizeParams {
             settle_signer,
             order_owner,
@@ -573,38 +619,43 @@ impl Amm for DarklakeAmm {
         let is_slash = *current_slot > *deadline;
 
         if is_slash {
-            return Ok(FinalizeAndAccountMetas::Slash(self.get_slash_and_account_metas(&SlashParams {
-                settle_signer: *settle_signer,
-                order_owner: *order_owner,
-                deadline: *deadline,
-                current_slot: *current_slot,
-            })?));
+            return Ok(FinalizeAndAccountMetas::Slash(
+                self.get_slash_and_account_metas(&SlashParams {
+                    settle_signer: *settle_signer,
+                    order_owner: *order_owner,
+                    deadline: *deadline,
+                    current_slot: *current_slot,
+                })?,
+            ));
         } else if is_settle {
-            return Ok(FinalizeAndAccountMetas::Settle(self.get_settle_and_account_metas(&SettleParams {
-                settle_signer: *settle_signer,
-                order_owner: *order_owner,
-                unwrap_wsol: *unwrap_wsol,
-                min_out: *min_out,
-                salt: *salt,
-                output: *output,
-                commitment: *commitment,
-                deadline: *deadline,
-                current_slot: *current_slot,
-            })?));
+            return Ok(FinalizeAndAccountMetas::Settle(
+                self.get_settle_and_account_metas(&SettleParams {
+                    settle_signer: *settle_signer,
+                    order_owner: *order_owner,
+                    unwrap_wsol: *unwrap_wsol,
+                    min_out: *min_out,
+                    salt: *salt,
+                    output: *output,
+                    commitment: *commitment,
+                    deadline: *deadline,
+                    current_slot: *current_slot,
+                })?,
+            ));
         } else {
-            return Ok(FinalizeAndAccountMetas::Cancel(self.get_cancel_and_account_metas(&CancelParams {
-                settle_signer: *settle_signer,
-                order_owner: *order_owner,
-                min_out: *min_out,
-                salt: *salt,
-                output: *output,
-                commitment: *commitment,
-                deadline: *deadline,
-                current_slot: *current_slot,
-            })?));
+            return Ok(FinalizeAndAccountMetas::Cancel(
+                self.get_cancel_and_account_metas(&CancelParams {
+                    settle_signer: *settle_signer,
+                    order_owner: *order_owner,
+                    min_out: *min_out,
+                    salt: *salt,
+                    output: *output,
+                    commitment: *commitment,
+                    deadline: *deadline,
+                    current_slot: *current_slot,
+                })?,
+            ));
         }
     }
-
 }
 
 pub struct DarklakeAmmSwap {
@@ -626,7 +677,7 @@ pub struct DarklakeAmmSwap {
     pub system_program: Pubkey,
     pub token_mint_x_program: Pubkey,
     pub token_mint_y_program: Pubkey,
-    pub token_program: Pubkey
+    pub token_program: Pubkey,
 }
 
 impl From<DarklakeAmmSwap> for Vec<AccountMeta> {
@@ -650,7 +701,7 @@ impl From<DarklakeAmmSwap> for Vec<AccountMeta> {
             AccountMeta::new_readonly(accounts.system_program, false),
             AccountMeta::new_readonly(accounts.token_mint_x_program, false),
             AccountMeta::new_readonly(accounts.token_mint_y_program, false),
-            AccountMeta::new_readonly(accounts.token_program, false)
+            AccountMeta::new_readonly(accounts.token_program, false),
         ]
     }
 }
@@ -677,7 +728,7 @@ pub struct DarklakeAmmSettle {
     pub associated_token_program: Pubkey,
     pub token_mint_x_program: Pubkey,
     pub token_mint_y_program: Pubkey,
-    pub token_program: Pubkey
+    pub token_program: Pubkey,
 }
 
 impl From<DarklakeAmmSettle> for Vec<AccountMeta> {
@@ -704,7 +755,7 @@ impl From<DarklakeAmmSettle> for Vec<AccountMeta> {
             AccountMeta::new_readonly(accounts.associated_token_program, false),
             AccountMeta::new_readonly(accounts.token_mint_x_program, false),
             AccountMeta::new_readonly(accounts.token_mint_y_program, false),
-            AccountMeta::new_readonly(accounts.token_program, false)
+            AccountMeta::new_readonly(accounts.token_program, false),
         ]
     }
 }
@@ -730,7 +781,7 @@ pub struct DarklakeAmmCancel {
     pub associated_token_program: Pubkey,
     pub token_mint_x_program: Pubkey,
     pub token_mint_y_program: Pubkey,
-    pub token_program: Pubkey
+    pub token_program: Pubkey,
 }
 
 impl From<DarklakeAmmCancel> for Vec<AccountMeta> {
@@ -756,11 +807,10 @@ impl From<DarklakeAmmCancel> for Vec<AccountMeta> {
             AccountMeta::new_readonly(accounts.associated_token_program, false),
             AccountMeta::new_readonly(accounts.token_mint_x_program, false),
             AccountMeta::new_readonly(accounts.token_mint_y_program, false),
-            AccountMeta::new_readonly(accounts.token_program, false)
+            AccountMeta::new_readonly(accounts.token_program, false),
         ]
     }
 }
-
 
 pub struct DarklakeAmmSlash {
     pub caller: Pubkey,
@@ -782,7 +832,7 @@ pub struct DarklakeAmmSlash {
     pub associated_token_program: Pubkey,
     pub token_mint_x_program: Pubkey,
     pub token_mint_y_program: Pubkey,
-    pub token_program: Pubkey
+    pub token_program: Pubkey,
 }
 
 impl From<DarklakeAmmSlash> for Vec<AccountMeta> {
@@ -807,14 +857,18 @@ impl From<DarklakeAmmSlash> for Vec<AccountMeta> {
             AccountMeta::new_readonly(accounts.associated_token_program, false),
             AccountMeta::new_readonly(accounts.token_mint_x_program, false),
             AccountMeta::new_readonly(accounts.token_mint_y_program, false),
-            AccountMeta::new_readonly(accounts.token_program, false)
+            AccountMeta::new_readonly(accounts.token_program, false),
         ]
     }
 }
 
 impl DarklakeAmm {
     /// Parse token account balance reliably for both SPL and Token2022 tokens
-    fn parse_token_account_balance(account_data: &[u8], account_owner: &Pubkey, token_account_pubkey: &Pubkey) -> Result<u64> {
+    fn parse_token_account_balance(
+        account_data: &[u8],
+        account_owner: &Pubkey,
+        token_account_pubkey: &Pubkey,
+    ) -> Result<u64> {
         // Check which token program owns the account and parse accordingly
         match account_owner {
             owner if *owner == spl_token::ID => {
@@ -824,21 +878,30 @@ impl DarklakeAmm {
             }
             owner if *owner == spl_token_2022::ID => {
                 // Token2022 account - use StateWithExtensions for proper parsing
-                let token_account = StateWithExtensions::<spl_token_2022::state::Account>::unpack(account_data)?;
+                let token_account =
+                    StateWithExtensions::<spl_token_2022::state::Account>::unpack(account_data)?;
                 Ok(token_account.base.amount)
             }
             _ => {
-                bail!("Unknown token program: {} for account {}", account_owner, token_account_pubkey);
+                bail!(
+                    "Unknown token program: {} for account {}",
+                    account_owner,
+                    token_account_pubkey
+                );
             }
         }
     }
 
-    fn get_transfer_fee_config(&self, mint_account_data: &[u8], mint_owner: &Pubkey) -> Result<Option<TransferFeeConfig>, ()> {
+    fn get_transfer_fee_config(
+        &self,
+        mint_account_data: &[u8],
+        mint_owner: &Pubkey,
+    ) -> Result<Option<TransferFeeConfig>, ()> {
         // Only Token2022 tokens can have transfer fee configs
         if *mint_owner != spl_token_2022::ID {
             return Ok(None);
         }
-        
+
         // Try to parse as Token2022 mint, but handle errors gracefully
         match StateWithExtensions::<spl_token_2022::state::Mint>::unpack(mint_account_data) {
             Ok(mint) => {
@@ -861,15 +924,14 @@ impl DarklakeAmm {
         swap_params: &QuoteParams,
         amm_config: &AmmConfig,
         reserve_x_balance: u64,
-        reserve_y_balance: u64
+        reserve_y_balance: u64,
     ) -> Result<Quote> {
-
         let is_swap_x_to_y = swap_params.input_mint == self.pool.token_mint_x;
 
         let amount_in = swap_params.amount;
 
-           // exclude protocol fees / locked pool reserves / user pending orders
-           let (total_token_x_amount, total_token_y_amount) = (
+        // exclude protocol fees / locked pool reserves / user pending orders
+        let (total_token_x_amount, total_token_y_amount) = (
             reserve_x_balance
                 .checked_sub(self.pool.protocol_fee_x)
                 .unwrap()
@@ -999,7 +1061,8 @@ impl DarklakeAmm {
         } else {
             self.token_y_transfer_fee_config
         };
-        let output_transfer_fee = get_transfer_fee(&output_transfer_fee_config, result_amounts.to_amount as u64)?;
+        let output_transfer_fee =
+            get_transfer_fee(&output_transfer_fee_config, result_amounts.to_amount as u64)?;
 
         // Take transfer fees into account for actual amount transferred in
         let actual_output_amount = (result_amounts.to_amount as u64)
@@ -1011,26 +1074,53 @@ impl DarklakeAmm {
         }
 
         let fee_pct = Decimal::new(amm_config.trade_fee_rate as i64, 4);
-        Ok(Quote { in_amount: amount_in, out_amount: actual_output_amount, fee_amount: output_transfer_fee, fee_mint: swap_params.input_mint, fee_pct })
+        Ok(Quote {
+            in_amount: amount_in,
+            out_amount: actual_output_amount,
+            fee_amount: output_transfer_fee,
+            fee_mint: swap_params.input_mint,
+            fee_pct,
+        })
     }
 
     fn get_authority(&self) -> Pubkey {
         Pubkey::find_program_address(&[b"authority"], &self.program_id()).0
     }
 
-    fn get_user_token_account(&self, user: Pubkey, token_mint: Pubkey, token_program: Pubkey) -> Pubkey {
-        Pubkey::find_program_address(&[user.as_ref(), token_program.as_ref(), token_mint.as_ref()], &spl_associated_token_account::ID).0
+    fn get_user_token_account(
+        &self,
+        user: Pubkey,
+        token_mint: Pubkey,
+        token_program: Pubkey,
+    ) -> Pubkey {
+        Pubkey::find_program_address(
+            &[user.as_ref(), token_program.as_ref(), token_mint.as_ref()],
+            &spl_associated_token_account::ID,
+        )
+        .0
     }
 
     fn get_pool_wsol_reserve(&self) -> Pubkey {
-        Pubkey::find_program_address(&[b"pool_wsol_reserve", self.key.as_ref()], &self.program_id()).0
+        Pubkey::find_program_address(
+            &[b"pool_wsol_reserve", self.key.as_ref()],
+            &self.program_id(),
+        )
+        .0
     }
 
     fn get_order(&self, user: Pubkey) -> Pubkey {
-        Pubkey::find_program_address(&[b"order", self.key.as_ref(), user.as_ref()], &self.program_id()).0
+        Pubkey::find_program_address(
+            &[b"order", self.key.as_ref(), user.as_ref()],
+            &self.program_id(),
+        )
+        .0
     }
 
     fn get_order_token_account_wsol(&self, user: Pubkey) -> Pubkey {
-        Pubkey::find_program_address(&[b"order_wsol", self.key.as_ref(), user.as_ref()], &self.program_id()).0
+        Pubkey::find_program_address(
+            &[b"order_wsol", self.key.as_ref(), user.as_ref()],
+            &self.program_id(),
+        )
+        .0
     }
 }

@@ -1,8 +1,8 @@
 use ark_bn254_4::Fr;
 use num_bigint::BigUint;
+use password_hash::rand_core::{OsRng, RngCore};
 use poseidon_ark as poseidon;
 use std::str::FromStr;
-use password_hash::rand_core::{OsRng, RngCore};
 
 pub fn u64_array_to_u8_array_le(input: &[u64; 4]) -> [u8; 32] {
     let mut output = [0u8; 32];
@@ -27,7 +27,7 @@ pub fn compute_poseidon_hash_with_salt(min_out: u64, salt: [u8; 8]) -> [u64; 4] 
 
     let hash_output_bytes = pos.hash(inputs_for_poseidon).unwrap(); // Handle the Result
 
-    let hash = hash_output_bytes.0.0;
+    let hash = hash_output_bytes.0 .0;
 
     hash
 }
@@ -99,7 +99,6 @@ mod tests {
             compute_poseidon_hash(min_out);
         }
     }
-
 
     #[test]
     fn test_poseidon_hash_bytes_and_field_element_all_zeroes() {
