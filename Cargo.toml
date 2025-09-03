@@ -1,38 +1,50 @@
-[workspace]
-members = [
-    "darklake-sdk",
-    "darklake-sdk-examples"
-]
-resolver = "2"
-
-[workspace.package]
+[package]
+name = "darklake-sdk"
+version = "0.1.0"
+description = "Darklake DEX SDK - A standalone SDK for interacting with Darklake AMM pools"
 edition = "2021"
+authors = ["Darklake Team"]
+license = "MIT"
 
-[workspace.dependencies]
+[dependencies]
 anchor-lang = "0.31.1"
-solana-sdk = ">=2.2"
-solana-rpc-client = ">=2.2"
-solana-rpc-client-api = ">=2.2"
-solana-account-decoder = ">=2.2"
-solana-sdk-ids = ">=2.2"
-solana-system-interface = "1.0.0"
-solana-transaction-status = ">=2.2"
-anyhow = "1"
+solana-sdk = "2.2.1"
+solana-rpc-client = "2.2.1"
+solana-rpc-client-api = "2.2.1"
+solana-account-decoder = "2.2.1"
+solana-sdk-ids = "2.2.1"
+solana-system-interface = "2.0.0"
+anyhow = "1.0.0"
 rust_decimal = "1.26.1"
 bincode = "1.3.3"
 log = "0.4.20"
-borsh = "0.10"
+serde_json = "1.0.82"
 
 # SPL
 spl-token = { version = "8.0.0", features = ["no-entrypoint"] }
 spl-associated-token-account = { version = "7.0.0", features = ["no-entrypoint"] }
-spl-token-2022 = { version = "9", features = ["no-entrypoint"] }
+spl-token-2022 = { version = "9.0.0", features = ["no-entrypoint"] }
 
-# Dev dependencies
+# Proof
+poseidon-ark = { git = "https://github.com/darklakefi/poseidon-ark.git", branch = "gateway" }
+password-hash = "0.5.0"
+
+ark-groth16 = { version = "0.5.0" }
+ark-circom = "0.5.0"
+ark-ec = { version = "0.5.0", default-features = false }
+ark-ff = { version = "0.5", default-features = false }
+ark-ff-4 = { version = "0.4", default-features = false, package = "ark-ff" }
+ark-bn254 = { version = "0.5", default-features = false, features = ["curve"] }
+ark-bn254-4 = { version = "0.4", default-features = false, features = [
+    "curve",
+], package = "ark-bn254" }
+ark-serialize = { version = "0.5.0", default-features = false }
+ark-std = "0.5.0"
+ark-relations = { version = "0.5.1", features = ["std"] }
 tokio = { version = "1", features = ["full"] }
-assert_matches = "1.5.0"
+num-bigint = "0.4"
+num-traits = "0.2"
+hex = "0.4"
 
-[workspace.dependencies.cargo-husky]
-version = "1.5.0"
-default-features = false
-features = ["user-hooks"]
+[dev-dependencies]
+assert_matches = { version = "1.5.0" }
