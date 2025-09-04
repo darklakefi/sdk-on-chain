@@ -1566,46 +1566,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "darklake-sdk"
-version = "0.1.1"
-dependencies = [
- "anchor-lang",
- "anchor-spl",
- "anyhow",
- "ark-bn254 0.4.0",
- "ark-bn254 0.5.0",
- "ark-circom",
- "ark-ec 0.5.0",
- "ark-ff 0.4.2",
- "ark-ff 0.5.0",
- "ark-groth16",
- "ark-relations",
- "ark-serialize 0.5.0",
- "ark-std 0.5.0",
- "assert_matches",
- "bincode",
- "dex-math",
- "hex",
- "log",
- "num-bigint",
- "num-traits",
- "password-hash",
- "poseidon-ark",
- "rust_decimal",
- "serde_json",
- "solana-account-decoder",
- "solana-rpc-client",
- "solana-rpc-client-api",
- "solana-sdk",
- "solana-sdk-ids",
- "solana-system-interface 2.0.0",
- "spl-associated-token-account 7.0.0",
- "spl-token 8.0.0",
- "spl-token-2022 6.0.0",
- "tokio",
-]
-
-[[package]]
 name = "darling"
 version = "0.14.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1813,7 +1773,7 @@ dependencies = [
 [[package]]
 name = "dex-math"
 version = "0.1.4"
-source = "git+git+ssh://github.com/darklakefi/dex-math.git?branch=main#ae8256cdd9f45680b107a565786173a2956238fe"
+source = "git+https://github.com/darklakefi/dex-math.git?branch=main#ae8256cdd9f45680b107a565786173a2956238fe"
 dependencies = [
  "anchor-lang",
  "anchor-spl",
@@ -4538,6 +4498,46 @@ name = "scopeguard"
 version = "1.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "94143f37725109f92c262ed2cf5e59bce7498c01bcc1502d7b9afe439a4e9f49"
+
+[[package]]
+name = "sdk-on-chain"
+version = "0.1.1"
+dependencies = [
+ "anchor-lang",
+ "anchor-spl",
+ "anyhow",
+ "ark-bn254 0.4.0",
+ "ark-bn254 0.5.0",
+ "ark-circom",
+ "ark-ec 0.5.0",
+ "ark-ff 0.4.2",
+ "ark-ff 0.5.0",
+ "ark-groth16",
+ "ark-relations",
+ "ark-serialize 0.5.0",
+ "ark-std 0.5.0",
+ "assert_matches",
+ "bincode",
+ "dex-math",
+ "hex",
+ "log",
+ "num-bigint",
+ "num-traits",
+ "password-hash",
+ "poseidon-ark",
+ "rust_decimal",
+ "serde_json",
+ "solana-account-decoder",
+ "solana-rpc-client",
+ "solana-rpc-client-api",
+ "solana-sdk",
+ "solana-sdk-ids",
+ "solana-system-interface 2.0.0",
+ "spl-associated-token-account 7.0.0",
+ "spl-token 8.0.0",
+ "spl-token-2022 6.0.0",
+ "tokio",
+]
 
 [[package]]
 name = "seahash"
