@@ -1,8 +1,8 @@
 use anchor_lang::prelude::*;
+use dex_math::quote;
 
 use crate::amm::*;
 
-use crate::math::{get_transfer_fee, rebalance_pool_ratio, swap, SwapResultWithFromToLock};
 use crate::proof::proof_generator::{
     convert_proof_to_solana_proof, from_32_byte_buffer, generate_proof, to_32_byte_buffer,
     PrivateProofInputs, PublicProofInputs,
@@ -211,12 +211,45 @@ impl Amm for DarklakeAmm {
             bail!("Exact out not supported");
         }
 
-        self.quote_internal(
-            quote_params,
-            &self.amm_config,
+        let is_swap_x_to_y = quote_params.input_mint == self.pool.token_mint_x;
+
+        let amm_config = dex_math::AmmConfig {
+            trade_fee_rate: self.amm_config.trade_fee_rate,
+            create_pool_fee: self.amm_config.create_pool_fee,
+            protocol_fee_rate: self.amm_config.protocol_fee_rate,
+            wsol_trade_deposit: self.amm_config.wsol_trade_deposit,
+            deadline_slot_duration: self.amm_config.deadline_slot_duration,
+            ratio_change_tolerance_rate: self.amm_config.ratio_change_tolerance_rate,
+            halted: self.amm_config.halted,
+        };
+        
+
+        let result = quote(
+            quote_params.amount,
+            is_swap_x_to_y,
+            &amm_config,
+            &self.token_x_transfer_fee_config,
+            &self.token_y_transfer_fee_config,
+            self.pool.token_mint_x,
+            self.pool.token_mint_y,
+            self.pool.protocol_fee_x,
+            self.pool.protocol_fee_y,
+            self.pool.user_locked_x,
+            self.pool.user_locked_y,
+            self.pool.locked_x,
+            self.pool.locked_y,
             self.reserve_x_balance,
             self.reserve_y_balance,
-        )
+            Clock::get()?.epoch,
+        )?;
+
+        Ok(Quote {
+            in_amount: quote_params.amount,
+            out_amount: result.from_amount_after_transfer_fees,
+            fee_amount: result.trade_fee,
+            fee_mint: if is_swap_x_to_y { self.pool.token_mint_x } else { self.pool.token_mint_y },
+            fee_pct: Decimal::from(self.amm_config.trade_fee_rate),
+        })
     }
 
     fn get_swap_and_account_metas(&self, swap_params: &SwapParams) -> Result<SwapAndAccountMetas> {
@@ -917,170 +950,6 @@ impl DarklakeAmm {
                 Ok(None)
             }
         }
-    }
-
-    fn quote_internal(
-        &self,
-        swap_params: &QuoteParams,
-        amm_config: &AmmConfig,
-        reserve_x_balance: u64,
-        reserve_y_balance: u64,
-    ) -> Result<Quote> {
-        let is_swap_x_to_y = swap_params.input_mint == self.pool.token_mint_x;
-
-        let amount_in = swap_params.amount;
-
-        // exclude protocol fees / locked pool reserves / user pending orders
-        let (total_token_x_amount, total_token_y_amount) = (
-            reserve_x_balance
-                .checked_sub(self.pool.protocol_fee_x)
-                .unwrap()
-                .checked_sub(self.pool.user_locked_x)
-                .unwrap(),
-            reserve_y_balance
-                .checked_sub(self.pool.protocol_fee_y)
-                .unwrap()
-                .checked_sub(self.pool.user_locked_y)
-                .unwrap(),
-        );
-
-        let (available_token_x_amount, available_token_y_amount) = (
-            total_token_x_amount
-                .checked_sub(self.pool.locked_x)
-                .unwrap(),
-            total_token_y_amount
-                .checked_sub(self.pool.locked_y)
-                .unwrap(),
-        );
-
-        // the amount we receive excluding any outside transfer fees
-        let exchange_in;
-        // Calculate the output amount using the constant product formula
-        let result_amounts: SwapResultWithFromToLock = if is_swap_x_to_y {
-            // Swap X to Y
-
-            let input_transfer_fee =
-                get_transfer_fee(&self.token_x_transfer_fee_config, amount_in)?;
-
-            // Take transfer fees into account for actual amount transferred in
-            exchange_in = amount_in.saturating_sub(input_transfer_fee);
-
-            if exchange_in == 0 {
-                bail!("Input amount too small");
-            }
-
-            let result_amounts = swap(
-                exchange_in as u128,
-                available_token_x_amount as u128,
-                available_token_y_amount as u128,
-                self.amm_config.trade_fee_rate,
-                self.amm_config.protocol_fee_rate,
-            )
-            .ok_or(anyhow::anyhow!("Math overflow"))?;
-
-            let rebalance_result = rebalance_pool_ratio(
-                result_amounts.to_amount,
-                available_token_x_amount,
-                available_token_y_amount,
-                total_token_x_amount,
-                total_token_y_amount,
-                self.amm_config.ratio_change_tolerance_rate,
-            )
-            .ok_or(anyhow::anyhow!("Math overflow"))?;
-
-            if rebalance_result.is_rate_tolerance_exceeded {
-                bail!("Trade too big");
-            }
-
-            // can't reserve to 0 or negative
-            if rebalance_result.from_to_lock >= available_token_x_amount {
-                bail!("Insufficient pool token X balance");
-            }
-
-            SwapResultWithFromToLock {
-                from_amount: result_amounts.from_amount, // applied trade fee + transfer fee
-                to_amount: result_amounts.to_amount,     // nothing applied
-                from_to_lock: rebalance_result.from_to_lock,
-                trade_fee: result_amounts.trade_fee,
-                protocol_fee: result_amounts.protocol_fee,
-            }
-        } else {
-            let input_transfer_fee =
-                get_transfer_fee(&self.token_y_transfer_fee_config, amount_in)?;
-            // Take transfer fees into account for actual amount transferred in
-            exchange_in = amount_in.saturating_sub(input_transfer_fee);
-            if exchange_in == 0 {
-                bail!("Input amount too small");
-            }
-            // Swap Y to X
-            let result_amounts = swap(
-                exchange_in as u128,
-                available_token_y_amount as u128,
-                available_token_x_amount as u128,
-                self.amm_config.trade_fee_rate,
-                self.amm_config.protocol_fee_rate,
-            )
-            .ok_or(anyhow::anyhow!("Math overflow"))?;
-
-            let rebalance_result = rebalance_pool_ratio(
-                result_amounts.to_amount,
-                available_token_y_amount,
-                available_token_x_amount,
-                total_token_y_amount,
-                total_token_x_amount,
-                self.amm_config.ratio_change_tolerance_rate,
-            )
-            .ok_or(anyhow::anyhow!("Math overflow"))?;
-
-            if rebalance_result.is_rate_tolerance_exceeded {
-                bail!("Trade too big");
-            }
-
-            // can't reserve to 0 or negative
-            if rebalance_result.from_to_lock > available_token_y_amount {
-                bail!("Insufficient pool token Y balance");
-            }
-
-            SwapResultWithFromToLock {
-                from_amount: result_amounts.from_amount, // applied trade fee + transfer fee
-                to_amount: result_amounts.to_amount,     // nothing applied
-                from_to_lock: rebalance_result.from_to_lock,
-                trade_fee: result_amounts.trade_fee,
-                protocol_fee: result_amounts.protocol_fee,
-            }
-        };
-
-        let output_mint = if is_swap_x_to_y {
-            self.pool.token_mint_y
-        } else {
-            self.pool.token_mint_x
-        };
-
-        let output_transfer_fee_config = if output_mint == self.pool.token_mint_x {
-            self.token_x_transfer_fee_config
-        } else {
-            self.token_y_transfer_fee_config
-        };
-        let output_transfer_fee =
-            get_transfer_fee(&output_transfer_fee_config, result_amounts.to_amount as u64)?;
-
-        // Take transfer fees into account for actual amount transferred in
-        let actual_output_amount = (result_amounts.to_amount as u64)
-            .checked_sub(output_transfer_fee)
-            .unwrap();
-
-        if actual_output_amount == 0 {
-            bail!("Output amount is zero");
-        }
-
-        let fee_pct = Decimal::new(amm_config.trade_fee_rate as i64, 4);
-        Ok(Quote {
-            in_amount: amount_in,
-            out_amount: actual_output_amount,
-            fee_amount: output_transfer_fee,
-            fee_mint: swap_params.input_mint,
-            fee_pct,
-        })
     }
 
     fn get_authority(&self) -> Pubkey {
