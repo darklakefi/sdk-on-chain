@@ -1567,7 +1567,7 @@ dependencies = [
 
 [[package]]
 name = "darklake-sdk"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anchor-lang",
  "anchor-spl",
