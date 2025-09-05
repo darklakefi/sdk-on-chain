@@ -169,7 +169,7 @@ impl DarklakeSDK {
 
         let salt = generate_random_salt();
 
-        let payer_pubkey = self.client.program(DARKLAKE_PROGRAM_ID).unwrap().payer();
+        let payer_pubkey: Pubkey = self.client.program(DARKLAKE_PROGRAM_ID).unwrap().payer();
 
         let swap_params = SwapParams {
             source_mint: token_in,
@@ -295,6 +295,156 @@ impl DarklakeSDK {
             .send_with_spinner_and_config(self.transaction_config).await?;
 
         Ok((swap_signature, finalize_signature))
+    }
+
+    pub async fn add_liquidity(
+        &mut self,
+        token_x: Pubkey,
+        token_y: Pubkey,
+        max_amount_x: u64,
+        max_amount_y: u64,
+        amount_lp: u64,
+    ) -> Result<Signature> {
+        let rpc_client = self.client.program(DARKLAKE_PROGRAM_ID)?.rpc();
+
+        let (pool_key, _token_x, _token_y) = get_pool_address(token_x, token_y);
+
+        let max_amount_x = if _token_x != token_x {
+            max_amount_y
+        } else {
+            max_amount_x
+        };
+        let max_amount_y = if _token_x != token_x {
+            max_amount_x
+        } else {
+            max_amount_y
+        };
+
+        if self.darklake_amm.as_ref().unwrap().key() != pool_key {
+            self.load_pool(pool_key).await?;
+        }
+
+        // update accounts
+        let accounts_to_update = self.darklake_amm.as_ref().unwrap().get_accounts_to_update();
+        let mut account_map = HashMap::new();
+        for account_key in accounts_to_update {
+            let account = rpc_client.get_account(&account_key).await?;
+            account_map.insert(
+                account_key,
+                AccountData {
+                    data: account.data,
+                    owner: account.owner,
+                },
+            );
+        }
+        self.darklake_amm.as_mut().unwrap().update(&account_map)?;
+
+        let payer_pubkey: Pubkey = self.client.program(DARKLAKE_PROGRAM_ID).unwrap().payer();
+
+
+        let add_liquidity_params = AddLiquidityParams {
+            amount_lp,
+            max_amount_x,
+            max_amount_y,
+            user: payer_pubkey,
+        };
+        
+        let add_liquidity_and_account_metas = self
+            .darklake_amm
+            .as_ref()
+            .unwrap()
+            .get_add_liquidity_and_account_metas(&add_liquidity_params)?;
+
+
+        let add_liquidity_instruction = Instruction {
+            program_id: DARKLAKE_PROGRAM_ID,
+            accounts: add_liquidity_and_account_metas.account_metas,
+            data: add_liquidity_and_account_metas.data,
+        };
+
+        let program = self.client.program(DARKLAKE_PROGRAM_ID)?;
+        let request_builder = program.request();
+
+        let add_liquidity_signature = request_builder
+            .instruction(add_liquidity_instruction)
+            .send_with_spinner_and_config(self.transaction_config).await?;
+
+        Ok(add_liquidity_signature)
+    }
+
+    pub async fn remove_liquidity(
+        &mut self,
+        token_x: Pubkey,
+        token_y: Pubkey,
+        min_amount_x: u64,
+        min_amount_y: u64,
+        amount_lp: u64,
+    ) -> Result<Signature> {
+        let rpc_client = self.client.program(DARKLAKE_PROGRAM_ID)?.rpc();
+
+        let (pool_key, _token_x, _token_y) = get_pool_address(token_x, token_y);
+
+        let min_amount_x = if _token_x != token_x {
+            min_amount_y
+        } else {
+            min_amount_x
+        };
+        let min_amount_y = if _token_x != token_x {
+            min_amount_x
+        } else {
+            min_amount_y
+        };
+
+        if self.darklake_amm.as_ref().unwrap().key() != pool_key {
+            self.load_pool(pool_key).await?;
+        }
+
+        // update accounts
+        let accounts_to_update = self.darklake_amm.as_ref().unwrap().get_accounts_to_update();
+        let mut account_map = HashMap::new();
+        for account_key in accounts_to_update {
+            let account = rpc_client.get_account(&account_key).await?;
+            account_map.insert(
+                account_key,
+                AccountData {
+                    data: account.data,
+                    owner: account.owner,
+                },
+            );
+        }
+        self.darklake_amm.as_mut().unwrap().update(&account_map)?;
+
+        let payer_pubkey: Pubkey = self.client.program(DARKLAKE_PROGRAM_ID).unwrap().payer();
+
+
+        let remove_liquidity_params = RemoveLiquidityParams {
+            amount_lp,
+            min_amount_x,
+            min_amount_y,
+            user: payer_pubkey,
+        };
+        
+        let remove_liquidity_and_account_metas = self
+            .darklake_amm
+            .as_ref()
+            .unwrap()
+            .get_remove_liquidity_and_account_metas(&remove_liquidity_params)?;
+
+
+        let remove_liquidity_instruction = Instruction {
+            program_id: DARKLAKE_PROGRAM_ID,
+            accounts: remove_liquidity_and_account_metas.account_metas,
+            data: remove_liquidity_and_account_metas.data,
+        };
+
+        let program = self.client.program(DARKLAKE_PROGRAM_ID)?;
+        let request_builder = program.request();
+
+        let remove_liquidity_signature = request_builder
+            .instruction(remove_liquidity_instruction)
+            .send_with_spinner_and_config(self.transaction_config).await?;
+
+        Ok(remove_liquidity_signature)
     }
 
     /// Get the signer's public key
