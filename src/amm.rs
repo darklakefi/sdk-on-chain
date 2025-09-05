@@ -111,7 +111,6 @@ pub struct QuoteParams {
 #[derive(Debug, Clone, PartialEq, Copy)]
 pub enum SwapMode {
     ExactIn,
-    ExactOut,
 }
 
 /// Quote result

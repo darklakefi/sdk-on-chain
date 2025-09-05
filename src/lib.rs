@@ -487,19 +487,22 @@ impl DarklakeSDK {
     // load_pool has to be called at least once before and update_accounts before each function call
 
     pub async fn update_accounts(&mut self) -> Result<()> {
-        let pool_key = self.darklake_amm.as_ref().unwrap().key();
         let rpc_client = self.client.program(DARKLAKE_PROGRAM_ID)?.rpc();
-        let pool_account_data = rpc_client.get_account(&pool_key).await?;
 
-        let pool_key_and_account = KeyedAccount {
-            key: pool_key,
-            account: AccountData {
-                data: pool_account_data.data.to_vec(),
-                owner: DARKLAKE_PROGRAM_ID,
-            },
-        };
+        let accounts_to_update = self.darklake_amm.as_ref().unwrap().get_accounts_to_update();
+        let mut account_map = HashMap::new();
+        for account_key in accounts_to_update {
+            let account = rpc_client.get_account(&account_key).await?;
+            account_map.insert(
+                account_key,
+                AccountData {
+                    data: account.data,
+                    owner: account.owner,
+                },
+            );
+        }
+        self.darklake_amm.as_mut().unwrap().update(&account_map)?;
 
-        self.darklake_amm = Some(DarklakeAmm::load_pool(&pool_key_and_account)?);
         Ok(())
     }
 
