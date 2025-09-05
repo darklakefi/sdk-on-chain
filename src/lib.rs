@@ -202,7 +202,8 @@ impl DarklakeSDK {
         let swap_signature = request_builder
             .instruction(compute_budget_ix)
             .instruction(swap_instruction)
-            .send_with_spinner_and_config(self.transaction_config).await?;
+            .send_with_spinner_and_config(self.transaction_config)
+            .await?;
 
         let order_key = self
             .darklake_amm
@@ -292,7 +293,8 @@ impl DarklakeSDK {
         let finalize_signature = request_builder
             .instruction(compute_budget_ix)
             .instruction(finalize_instruction)
-            .send_with_spinner_and_config(self.transaction_config).await?;
+            .send_with_spinner_and_config(self.transaction_config)
+            .await?;
 
         Ok((swap_signature, finalize_signature))
     }
@@ -341,20 +343,18 @@ impl DarklakeSDK {
 
         let payer_pubkey: Pubkey = self.client.program(DARKLAKE_PROGRAM_ID).unwrap().payer();
 
-
         let add_liquidity_params = AddLiquidityParams {
             amount_lp,
             max_amount_x,
             max_amount_y,
             user: payer_pubkey,
         };
-        
+
         let add_liquidity_and_account_metas = self
             .darklake_amm
             .as_ref()
             .unwrap()
             .get_add_liquidity_and_account_metas(&add_liquidity_params)?;
-
 
         let add_liquidity_instruction = Instruction {
             program_id: DARKLAKE_PROGRAM_ID,
@@ -367,7 +367,8 @@ impl DarklakeSDK {
 
         let add_liquidity_signature = request_builder
             .instruction(add_liquidity_instruction)
-            .send_with_spinner_and_config(self.transaction_config).await?;
+            .send_with_spinner_and_config(self.transaction_config)
+            .await?;
 
         Ok(add_liquidity_signature)
     }
@@ -416,20 +417,18 @@ impl DarklakeSDK {
 
         let payer_pubkey: Pubkey = self.client.program(DARKLAKE_PROGRAM_ID).unwrap().payer();
 
-
         let remove_liquidity_params = RemoveLiquidityParams {
             amount_lp,
             min_amount_x,
             min_amount_y,
             user: payer_pubkey,
         };
-        
+
         let remove_liquidity_and_account_metas = self
             .darklake_amm
             .as_ref()
             .unwrap()
             .get_remove_liquidity_and_account_metas(&remove_liquidity_params)?;
-
 
         let remove_liquidity_instruction = Instruction {
             program_id: DARKLAKE_PROGRAM_ID,
@@ -442,7 +441,8 @@ impl DarklakeSDK {
 
         let remove_liquidity_signature = request_builder
             .instruction(remove_liquidity_instruction)
-            .send_with_spinner_and_config(self.transaction_config).await?;
+            .send_with_spinner_and_config(self.transaction_config)
+            .await?;
 
         Ok(remove_liquidity_signature)
     }
