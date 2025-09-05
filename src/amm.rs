@@ -2,6 +2,8 @@ use anchor_lang::prelude::AccountMeta;
 use anyhow::Result;
 use solana_sdk::pubkey::Pubkey;
 
+use crate::darklake_amm::Order;
+
 /// Core AMM trait for Darklake DEX operations
 pub trait Amm: Send + Sync {
     /// Deserialize the AMM from a keyed account
@@ -51,7 +53,7 @@ pub trait Amm: Send + Sync {
     fn get_order_pubkey(&self, user: Pubkey) -> Result<Pubkey>;
 
     /// Get order output
-    fn get_order_output_and_deadline(&self, order_data: &[u8]) -> Result<(u64, u64)>;
+    fn parse_order_data(&self, order_data: &[u8]) -> Result<Order>;
 
     /// Check if order is expired
     fn is_order_expired(&self, order_data: &[u8], current_slot: u64) -> Result<bool>;

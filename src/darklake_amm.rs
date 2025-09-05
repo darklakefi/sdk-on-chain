@@ -356,9 +356,9 @@ impl Amm for DarklakeAmm {
         Ok(self.get_order(user))
     }
 
-    fn get_order_output_and_deadline(&self, order_data: &[u8]) -> Result<(u64, u64)> {
+    fn parse_order_data(&self, order_data: &[u8]) -> Result<Order> {
         let order = Order::deserialize(&mut &order_data[8..])?;
-        Ok((order.actual_out, order.deadline))
+        Ok(order)
     }
 
     fn is_order_expired(&self, order_data: &[u8], current_slot: u64) -> Result<bool> {

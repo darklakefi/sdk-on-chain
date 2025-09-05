@@ -24,7 +24,7 @@ pub use amm::*;
 use anchor_client::{solana_sdk::signer::keypair::Keypair, Client, Cluster};
 pub use darklake_amm::{DarklakeAmm, DARKLAKE_PROGRAM_ID};
 
-use crate::utils::generate_random_salt;
+use crate::{darklake_amm::Order, utils::generate_random_salt};
 use anyhow::{Context, Result};
 use solana_rpc_client_api::config::RpcSendTransactionConfig;
 use solana_sdk::{
@@ -274,11 +274,11 @@ impl DarklakeSDK {
             ));
         }
 
-        let (output, deadline) = self
+        let order = self
             .darklake_amm
             .as_ref()
             .unwrap()
-            .get_order_output_and_deadline(&order_data.unwrap().data)?;
+            .parse_order_data(&order_data.unwrap().data)?;
 
         // update accounts
         let accounts_to_update = self.darklake_amm.as_ref().unwrap().get_accounts_to_update();
@@ -301,9 +301,9 @@ impl DarklakeSDK {
             unwrap_wsol: false,           // Set to true if output is wrapped SOL
             min_out: swap_params.min_out, // Same min_out as swap
             salt: swap_params.salt,       // Same salt as swap
-            output,                       // Will be populated by the SDK
+            output: order.d_out,     // Will be populated by the SDK
             commitment: swap_and_account_metas.swap.c_min, // Will be populated by the SDK
-            deadline,
+            deadline: order.deadline,
             current_slot: rpc_client.get_slot().await?,
         };
 
@@ -518,20 +518,20 @@ impl DarklakeSDK {
         })
     }
 
-    pub async fn get_order_output_and_deadline(&mut self, user: Pubkey) -> Result<(u64, u64)> {
+    pub async fn get_order(&mut self, user: Pubkey) -> Result<Order> {
         let rpc_client = self.client.program(DARKLAKE_PROGRAM_ID)?.rpc();
 
         let order_key = self.darklake_amm.as_ref().unwrap().get_order_pubkey(user)?;
 
         let order_data = rpc_client.get_account(&order_key).await?;
 
-        let (output, deadline) = self
+        let order = self
             .darklake_amm
             .as_ref()
             .unwrap()
-            .get_order_output_and_deadline(&order_data.data)?;
+            .parse_order_data(&order_data.data)?;
 
-        Ok((output, deadline))
+        Ok(order)
     }
 
     pub async fn finalize_ix(&mut self, finalize_params: FinalizeParams) -> Result<Instruction> {
