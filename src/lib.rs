@@ -447,6 +447,122 @@ impl DarklakeSDK {
         Ok(remove_liquidity_signature)
     }
 
+    // MANUAL HANDLING (these are prone to changes in the future)
+
+    pub async fn update_accounts(
+        &mut self,
+    ) -> Result<()> {
+        let pool_key = self.darklake_amm.as_ref().unwrap().key();
+        let rpc_client = self.client.program(DARKLAKE_PROGRAM_ID)?.rpc();
+        let pool_account_data = rpc_client.get_account(&pool_key).await?;
+
+        let pool_key_and_account = KeyedAccount {
+            key: pool_key,
+            account: AccountData {
+                data: pool_account_data.data.to_vec(),
+                owner: DARKLAKE_PROGRAM_ID,
+            },
+        };
+
+        self.darklake_amm = Some(DarklakeAmm::load_pool(&pool_key_and_account)?);
+        Ok(())
+    }
+
+    // before calling swap_ix - load_pool and update_accounts has to be called
+    pub async fn swap_ix(
+        &mut self,
+        swap_params: SwapParams,
+    ) -> Result<Instruction> {
+
+        let swap_and_account_metas = self
+            .darklake_amm
+            .as_ref()
+            .unwrap()
+            .get_swap_and_account_metas(&swap_params)
+            .context("Failed to get swap instruction and account metadata")?;
+
+        Ok(Instruction {
+            program_id: DARKLAKE_PROGRAM_ID,
+            accounts: swap_and_account_metas.account_metas,
+            data: swap_and_account_metas.data,
+        })
+    }
+
+    pub async fn get_order_output_and_deadline(
+        &mut self,
+        user: Pubkey,
+    ) -> Result<(u64, u64)> {
+        let rpc_client = self.client.program(DARKLAKE_PROGRAM_ID)?.rpc();
+
+        let order_key = self
+            .darklake_amm
+            .as_ref()
+            .unwrap()
+            .get_order_pubkey(user)?;
+
+        let order_data = rpc_client.get_account(&order_key).await?;
+
+        let (output, deadline) = self
+            .darklake_amm
+            .as_ref()
+            .unwrap()
+            .get_order_output_and_deadline(&order_data.data)?;
+
+        Ok((output, deadline))
+    }
+
+    pub async fn finalize_ix(
+        &mut self,
+        finalize_params: FinalizeParams,
+    ) -> Result<Instruction> {
+        let finalize_and_account_metas = self
+            .darklake_amm
+            .as_ref()
+            .unwrap()
+            .get_finalize_and_account_metas(&finalize_params)?;
+
+        Ok(Instruction {
+            program_id: DARKLAKE_PROGRAM_ID,
+            accounts: finalize_and_account_metas.account_metas(),
+            data: finalize_and_account_metas.data(),
+        })
+    }
+
+    pub async fn add_liquidity_ix(
+        &mut self,
+        add_liquidity_params: AddLiquidityParams,
+    ) -> Result<Instruction> {
+        let add_liquidity_and_account_metas = self
+            .darklake_amm
+            .as_ref()
+            .unwrap()
+            .get_add_liquidity_and_account_metas(&add_liquidity_params)?;
+
+
+        Ok(Instruction {
+            program_id: DARKLAKE_PROGRAM_ID,
+            accounts: add_liquidity_and_account_metas.account_metas,
+            data: add_liquidity_and_account_metas.data,
+        })
+    }
+
+    pub async fn remove_liquidity_ix(
+        &mut self,
+        remove_liquidity_params: RemoveLiquidityParams,
+    ) -> Result<Instruction> {
+        let remove_liquidity_and_account_metas = self
+            .darklake_amm
+            .as_ref()
+            .unwrap()
+            .get_remove_liquidity_and_account_metas(&remove_liquidity_params)?;
+
+        Ok(Instruction {
+            program_id: DARKLAKE_PROGRAM_ID,
+            accounts: remove_liquidity_and_account_metas.account_metas,
+            data: remove_liquidity_and_account_metas.data,
+        })
+    }
+
     /// Get the signer's public key
     pub fn signer_pubkey(&self) -> Pubkey {
         self.client.program(DARKLAKE_PROGRAM_ID).unwrap().payer()
