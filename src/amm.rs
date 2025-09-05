@@ -4,11 +4,8 @@ use solana_sdk::pubkey::Pubkey;
 
 /// Core AMM trait for Darklake DEX operations
 pub trait Amm: Send + Sync {
-    /// Get the label/name of the AMM
-    fn label(&self) -> String;
-
     /// Deserialize the AMM from a keyed account
-    fn from_keyed_account(keyed_account: &KeyedAccount) -> Result<Self>
+    fn load_pool(pool: &KeyedAccount) -> Result<Self>
     where
         Self: Sized;
 
@@ -70,6 +67,18 @@ pub trait Amm: Send + Sync {
         &self,
         slash_params: &SlashParams,
     ) -> Result<SlashAndAccountMetas>;
+
+    /// Get add liquidity parameters and account metadata
+    fn get_add_liquidity_and_account_metas(
+        &self,
+        add_liquidity_params: &AddLiquidityParams,
+    ) -> Result<AddLiquidityAndAccountMetas>;
+
+    /// Get remove liquidity parameters and account metadata
+    fn get_remove_liquidity_and_account_metas(
+        &self,
+        remove_liquidity_params: &RemoveLiquidityParams,
+    ) -> Result<RemoveLiquidityAndAccountMetas>;
 
     // helper
     fn get_finalize_and_account_metas(
@@ -161,6 +170,24 @@ pub struct SlashParams {
     pub current_slot: u64,
 }
 
+/// Add liquidity parameters
+#[derive(Debug, Clone)]
+pub struct AddLiquidityParams {
+    pub user: Pubkey,
+    pub amount_lp: u64, // lp to mint
+    pub max_amount_x: u64,
+    pub max_amount_y: u64,
+}
+
+/// Remove liquidity parameters
+#[derive(Debug, Clone)]
+pub struct RemoveLiquidityParams {
+    pub user: Pubkey,
+    pub amount_lp: u64, // lp to burn
+    pub min_amount_x: u64,
+    pub min_amount_y: u64,
+}
+
 /// Finalize parameters
 #[derive(Debug, Clone)]
 pub struct FinalizeParams {
@@ -198,6 +225,24 @@ pub struct SettleAndAccountMetas {
 pub struct CancelAndAccountMetas {
     pub discriminator: [u8; 8],
     pub cancel: DarklakeAmmCancelParams,
+    pub data: Vec<u8>,
+    pub account_metas: Vec<AccountMeta>,
+}
+
+/// Add liquidity result with account metadata
+#[derive(Debug, Clone)]
+pub struct AddLiquidityAndAccountMetas {
+    pub discriminator: [u8; 8],
+    pub add_liquidity: DarklakeAmmAddLiquidityParams,
+    pub data: Vec<u8>,
+    pub account_metas: Vec<AccountMeta>,
+}
+
+/// Remove liquidity result with account metadata
+#[derive(Debug, Clone)]
+pub struct RemoveLiquidityAndAccountMetas {
+    pub discriminator: [u8; 8],
+    pub remove_liquidity: DarklakeAmmRemoveLiquidityParams,
     pub data: Vec<u8>,
     pub account_metas: Vec<AccountMeta>,
 }
@@ -277,6 +322,22 @@ pub struct DarklakeAmmCancelParams {
 /// Darklake AMM slash parameters
 #[derive(Debug, Clone)]
 pub struct DarklakeAmmSlashParams {}
+
+/// Darklake AMM add liquidity parameters
+#[derive(Debug, Clone)]
+pub struct DarklakeAmmAddLiquidityParams {
+    pub amount_lp: u64,
+    pub max_amount_x: u64,
+    pub max_amount_y: u64,
+}
+
+/// Darklake AMM remove liquidity parameters
+#[derive(Debug, Clone)]
+pub struct DarklakeAmmRemoveLiquidityParams {
+    pub amount_lp: u64,
+    pub min_amount_x: u64,
+    pub min_amount_y: u64,
+}
 
 /// Keyed account for AMM operations
 #[derive(Debug, Clone)]

@@ -1,7 +1,11 @@
 use anchor_lang::prelude::*;
 use dex_math::quote;
 
-use crate::amm::*;
+use crate::utils::get_transfer_fee;
+use crate::{
+    amm::*, DarklakeAmmAddLiquidity, DarklakeAmmCancel, DarklakeAmmSettle, DarklakeAmmSlash,
+    DarklakeAmmSwap,
+};
 
 use crate::proof::proof_generator::{
     convert_proof_to_solana_proof, from_32_byte_buffer, generate_proof, to_32_byte_buffer,
@@ -111,17 +115,13 @@ pub struct Pool {
 pub const DARKLAKE_PROGRAM_ID: Pubkey = pubkey!("darkr3FB87qAZmgLwKov6Hk9Yiah5UT4rUYu8Zhthw1");
 
 impl Amm for DarklakeAmm {
-    fn label(&self) -> String {
-        "Darklake".to_string()
-    }
-
-    fn from_keyed_account(keyed_account: &KeyedAccount) -> Result<Self>
+    fn load_pool(pool: &KeyedAccount) -> Result<Self>
     where
         Self: Sized,
     {
         Ok(DarklakeAmm {
-            key: keyed_account.key,
-            pool: Pool::deserialize(&mut &keyed_account.account.data[8..])?,
+            key: pool.key,
+            pool: Pool::deserialize(&mut &pool.account.data[8..])?,
             amm_config: AmmConfig {
                 trade_fee_rate: 0,
                 create_pool_fee: 0,
@@ -157,7 +157,7 @@ impl Amm for DarklakeAmm {
     fn get_accounts_to_update(&self) -> Vec<Pubkey> {
         vec![
             self.key,
-            self.pool.token_mint_x, // tokens
+            self.pool.token_mint_x, // tokens (need owners)
             self.pool.token_mint_y,
             self.pool.reserve_x, // pool token reserves
             self.pool.reserve_y,
@@ -215,23 +215,22 @@ impl Amm for DarklakeAmm {
 
         let amm_config = dex_math::AmmConfig {
             trade_fee_rate: self.amm_config.trade_fee_rate,
-            create_pool_fee: self.amm_config.create_pool_fee,
             protocol_fee_rate: self.amm_config.protocol_fee_rate,
-            wsol_trade_deposit: self.amm_config.wsol_trade_deposit,
-            deadline_slot_duration: self.amm_config.deadline_slot_duration,
             ratio_change_tolerance_rate: self.amm_config.ratio_change_tolerance_rate,
-            halted: self.amm_config.halted,
         };
-        
+
+        let input_transfer_fee = if is_swap_x_to_y {
+            get_transfer_fee(self.token_x_transfer_fee_config, quote_params.amount)?
+        } else {
+            get_transfer_fee(self.token_y_transfer_fee_config, quote_params.amount)?
+        };
+
+        let exchange_in = quote_params.amount.checked_sub(input_transfer_fee).unwrap();
 
         let result = quote(
-            quote_params.amount,
+            exchange_in,
             is_swap_x_to_y,
             &amm_config,
-            &self.token_x_transfer_fee_config,
-            &self.token_y_transfer_fee_config,
-            self.pool.token_mint_x,
-            self.pool.token_mint_y,
             self.pool.protocol_fee_x,
             self.pool.protocol_fee_y,
             self.pool.user_locked_x,
@@ -240,14 +239,29 @@ impl Amm for DarklakeAmm {
             self.pool.locked_y,
             self.reserve_x_balance,
             self.reserve_y_balance,
-            Clock::get()?.epoch,
         )?;
 
+        let output_transfer_fee = if is_swap_x_to_y {
+            get_transfer_fee(self.token_y_transfer_fee_config, result.to_amount)?
+        } else {
+            get_transfer_fee(self.token_x_transfer_fee_config, result.to_amount)?
+        };
+
+        let actual_output_amount = result.to_amount.checked_sub(output_transfer_fee).unwrap();
+
+        if actual_output_amount == 0 {
+            bail!("Output is zero");
+        }
+
         Ok(Quote {
-            in_amount: quote_params.amount,
-            out_amount: result.from_amount_after_transfer_fees,
+            in_amount: result.from_amount,
+            out_amount: actual_output_amount,
             fee_amount: result.trade_fee,
-            fee_mint: if is_swap_x_to_y { self.pool.token_mint_x } else { self.pool.token_mint_y },
+            fee_mint: if is_swap_x_to_y {
+                self.pool.token_mint_x
+            } else {
+                self.pool.token_mint_y
+            },
             fee_pct: Decimal::from(self.amm_config.trade_fee_rate),
         })
     }
@@ -689,209 +703,121 @@ impl Amm for DarklakeAmm {
             ));
         }
     }
-}
 
-pub struct DarklakeAmmSwap {
-    pub user: Pubkey,
-    pub token_mint_x: Pubkey,
-    pub token_mint_y: Pubkey,
-    pub token_mint_wsol: Pubkey,
-    pub pool: Pubkey,
-    pub authority: Pubkey,
-    pub amm_config: Pubkey,
-    pub user_token_account_x: Pubkey,
-    pub user_token_account_y: Pubkey,
-    pub user_token_account_wsol: Pubkey,
-    pub pool_token_reserve_x: Pubkey,
-    pub pool_token_reserve_y: Pubkey,
-    pub pool_wsol_reserve: Pubkey,
-    pub order: Pubkey,
-    pub associated_token_program: Pubkey,
-    pub system_program: Pubkey,
-    pub token_mint_x_program: Pubkey,
-    pub token_mint_y_program: Pubkey,
-    pub token_program: Pubkey,
-}
+    fn get_add_liquidity_and_account_metas(
+        &self,
+        add_liquidity_params: &AddLiquidityParams,
+    ) -> Result<AddLiquidityAndAccountMetas> {
+        let AddLiquidityParams {
+            amount_lp,
+            max_amount_x,
+            max_amount_y,
+            user,
+        } = add_liquidity_params;
 
-impl From<DarklakeAmmSwap> for Vec<AccountMeta> {
-    fn from(accounts: DarklakeAmmSwap) -> Self {
-        vec![
-            AccountMeta::new(accounts.user, true),
-            AccountMeta::new_readonly(accounts.token_mint_x, false),
-            AccountMeta::new_readonly(accounts.token_mint_y, false),
-            AccountMeta::new_readonly(accounts.token_mint_wsol, false),
-            AccountMeta::new(accounts.pool, false),
-            AccountMeta::new_readonly(accounts.authority, false),
-            AccountMeta::new_readonly(accounts.amm_config, false),
-            AccountMeta::new(accounts.user_token_account_x, false),
-            AccountMeta::new(accounts.user_token_account_y, false),
-            AccountMeta::new(accounts.user_token_account_wsol, false),
-            AccountMeta::new(accounts.pool_token_reserve_x, false),
-            AccountMeta::new(accounts.pool_token_reserve_y, false),
-            AccountMeta::new(accounts.pool_wsol_reserve, false),
-            AccountMeta::new(accounts.order, false),
-            AccountMeta::new_readonly(accounts.associated_token_program, false),
-            AccountMeta::new_readonly(accounts.system_program, false),
-            AccountMeta::new_readonly(accounts.token_mint_x_program, false),
-            AccountMeta::new_readonly(accounts.token_mint_y_program, false),
-            AccountMeta::new_readonly(accounts.token_program, false),
-        ]
+        let authority = self.get_authority();
+
+        let user_token_account_x =
+            self.get_user_token_account(*user, self.pool.token_mint_x, self.token_x_owner);
+        let user_token_account_y =
+            self.get_user_token_account(*user, self.pool.token_mint_y, self.token_y_owner);
+
+        let token_mint_lp = self.get_token_mint_lp();
+
+        let user_token_account_lp =
+            self.get_user_token_account(*user, token_mint_lp, spl_token::ID);
+
+        let discriminator = [181, 157, 89, 67, 143, 182, 52, 72];
+
+        let data = discriminator.to_vec();
+
+        Ok(AddLiquidityAndAccountMetas {
+            discriminator,
+            add_liquidity: DarklakeAmmAddLiquidityParams {
+                amount_lp: *amount_lp,
+                max_amount_x: *max_amount_x,
+                max_amount_y: *max_amount_y,
+            },
+            data,
+            account_metas: DarklakeAmmAddLiquidity {
+                user: *user,
+                token_mint_x: self.pool.token_mint_x,
+                token_mint_y: self.pool.token_mint_y,
+                token_mint_lp,
+                pool: self.key,
+                authority,
+                pool_token_reserve_x: self.pool.reserve_x,
+                pool_token_reserve_y: self.pool.reserve_y,
+                amm_config: self.pool.amm_config,
+                user_token_account_x,
+                user_token_account_y,
+                user_token_account_lp,
+                system_program: system_program::ID,
+                associated_token_program: spl_associated_token_account::ID,
+                token_mint_x_program: self.token_x_owner,
+                token_mint_y_program: self.token_y_owner,
+                token_program: spl_token::ID,
+            }
+            .into(),
+        })
     }
-}
 
-pub struct DarklakeAmmSettle {
-    pub caller: Pubkey,
-    pub order_owner: Pubkey,
-    pub token_mint_x: Pubkey,
-    pub token_mint_y: Pubkey,
-    pub token_mint_wsol: Pubkey,
-    pub pool: Pubkey,
-    pub authority: Pubkey,
-    pub pool_token_reserve_x: Pubkey,
-    pub pool_token_reserve_y: Pubkey,
-    pub pool_wsol_reserve: Pubkey,
-    pub amm_config: Pubkey,
-    pub user_token_account_x: Pubkey,
-    pub user_token_account_y: Pubkey,
-    pub user_token_account_wsol: Pubkey,
-    pub caller_token_account_wsol: Pubkey,
-    pub order: Pubkey,
-    pub order_token_account_wsol: Pubkey,
-    pub system_program: Pubkey,
-    pub associated_token_program: Pubkey,
-    pub token_mint_x_program: Pubkey,
-    pub token_mint_y_program: Pubkey,
-    pub token_program: Pubkey,
-}
+    fn get_remove_liquidity_and_account_metas(
+        &self,
+        remove_liquidity_params: &RemoveLiquidityParams,
+    ) -> Result<RemoveLiquidityAndAccountMetas> {
+        let RemoveLiquidityParams {
+            amount_lp,
+            min_amount_x,
+            min_amount_y,
+            user,
+        } = remove_liquidity_params;
 
-impl From<DarklakeAmmSettle> for Vec<AccountMeta> {
-    fn from(accounts: DarklakeAmmSettle) -> Self {
-        vec![
-            AccountMeta::new(accounts.caller, true),
-            AccountMeta::new(accounts.order_owner, false),
-            AccountMeta::new_readonly(accounts.token_mint_x, false),
-            AccountMeta::new_readonly(accounts.token_mint_y, false),
-            AccountMeta::new_readonly(accounts.token_mint_wsol, false),
-            AccountMeta::new(accounts.pool, false),
-            AccountMeta::new_readonly(accounts.authority, false),
-            AccountMeta::new(accounts.pool_token_reserve_x, false),
-            AccountMeta::new(accounts.pool_token_reserve_y, false),
-            AccountMeta::new(accounts.pool_wsol_reserve, false),
-            AccountMeta::new_readonly(accounts.amm_config, false),
-            AccountMeta::new(accounts.user_token_account_x, false),
-            AccountMeta::new(accounts.user_token_account_y, false),
-            AccountMeta::new(accounts.user_token_account_wsol, false),
-            AccountMeta::new(accounts.caller_token_account_wsol, false),
-            AccountMeta::new(accounts.order, false),
-            AccountMeta::new(accounts.order_token_account_wsol, false),
-            AccountMeta::new_readonly(accounts.system_program, false),
-            AccountMeta::new_readonly(accounts.associated_token_program, false),
-            AccountMeta::new_readonly(accounts.token_mint_x_program, false),
-            AccountMeta::new_readonly(accounts.token_mint_y_program, false),
-            AccountMeta::new_readonly(accounts.token_program, false),
-        ]
-    }
-}
+        let authority = self.get_authority();
 
-pub struct DarklakeAmmCancel {
-    pub caller: Pubkey,
-    pub order_owner: Pubkey,
-    pub token_mint_x: Pubkey,
-    pub token_mint_y: Pubkey,
-    pub token_mint_wsol: Pubkey,
-    pub pool: Pubkey,
-    pub authority: Pubkey,
-    pub pool_token_reserve_x: Pubkey,
-    pub pool_token_reserve_y: Pubkey,
-    pub pool_wsol_reserve: Pubkey,
-    pub amm_config: Pubkey,
-    pub user_token_account_x: Pubkey,
-    pub user_token_account_y: Pubkey,
-    pub user_token_account_wsol: Pubkey,
-    pub caller_token_account_wsol: Pubkey,
-    pub order: Pubkey,
-    pub system_program: Pubkey,
-    pub associated_token_program: Pubkey,
-    pub token_mint_x_program: Pubkey,
-    pub token_mint_y_program: Pubkey,
-    pub token_program: Pubkey,
-}
+        let user_token_account_x =
+            self.get_user_token_account(*user, self.pool.token_mint_x, self.token_x_owner);
+        let user_token_account_y =
+            self.get_user_token_account(*user, self.pool.token_mint_y, self.token_y_owner);
 
-impl From<DarklakeAmmCancel> for Vec<AccountMeta> {
-    fn from(accounts: DarklakeAmmCancel) -> Self {
-        vec![
-            AccountMeta::new(accounts.caller, true),
-            AccountMeta::new(accounts.order_owner, false),
-            AccountMeta::new_readonly(accounts.token_mint_x, false),
-            AccountMeta::new_readonly(accounts.token_mint_y, false),
-            AccountMeta::new_readonly(accounts.token_mint_wsol, false),
-            AccountMeta::new(accounts.pool, false),
-            AccountMeta::new_readonly(accounts.authority, false),
-            AccountMeta::new(accounts.pool_token_reserve_x, false),
-            AccountMeta::new(accounts.pool_token_reserve_y, false),
-            AccountMeta::new(accounts.pool_wsol_reserve, false),
-            AccountMeta::new_readonly(accounts.amm_config, false),
-            AccountMeta::new(accounts.user_token_account_x, false),
-            AccountMeta::new(accounts.user_token_account_y, false),
-            AccountMeta::new(accounts.user_token_account_wsol, false),
-            AccountMeta::new(accounts.caller_token_account_wsol, false),
-            AccountMeta::new(accounts.order, false),
-            AccountMeta::new_readonly(accounts.system_program, false),
-            AccountMeta::new_readonly(accounts.associated_token_program, false),
-            AccountMeta::new_readonly(accounts.token_mint_x_program, false),
-            AccountMeta::new_readonly(accounts.token_mint_y_program, false),
-            AccountMeta::new_readonly(accounts.token_program, false),
-        ]
-    }
-}
+        let token_mint_lp = self.get_token_mint_lp();
 
-pub struct DarklakeAmmSlash {
-    pub caller: Pubkey,
-    pub order_owner: Pubkey,
-    pub token_mint_x: Pubkey,
-    pub token_mint_y: Pubkey,
-    pub token_mint_wsol: Pubkey,
-    pub pool: Pubkey,
-    pub authority: Pubkey,
-    pub pool_token_reserve_x: Pubkey,
-    pub pool_token_reserve_y: Pubkey,
-    pub pool_wsol_reserve: Pubkey,
-    pub amm_config: Pubkey,
-    pub user_token_account_x: Pubkey,
-    pub user_token_account_y: Pubkey,
-    pub caller_token_account_wsol: Pubkey,
-    pub order: Pubkey,
-    pub system_program: Pubkey,
-    pub associated_token_program: Pubkey,
-    pub token_mint_x_program: Pubkey,
-    pub token_mint_y_program: Pubkey,
-    pub token_program: Pubkey,
-}
+        let user_token_account_lp =
+            self.get_user_token_account(*user, token_mint_lp, spl_token::ID);
 
-impl From<DarklakeAmmSlash> for Vec<AccountMeta> {
-    fn from(accounts: DarklakeAmmSlash) -> Self {
-        vec![
-            AccountMeta::new(accounts.caller, true),
-            AccountMeta::new(accounts.order_owner, false),
-            AccountMeta::new_readonly(accounts.token_mint_x, false),
-            AccountMeta::new_readonly(accounts.token_mint_y, false),
-            AccountMeta::new_readonly(accounts.token_mint_wsol, false),
-            AccountMeta::new(accounts.pool, false),
-            AccountMeta::new_readonly(accounts.authority, false),
-            AccountMeta::new(accounts.pool_token_reserve_x, false),
-            AccountMeta::new(accounts.pool_token_reserve_y, false),
-            AccountMeta::new(accounts.pool_wsol_reserve, false),
-            AccountMeta::new_readonly(accounts.amm_config, false),
-            AccountMeta::new(accounts.user_token_account_x, false),
-            AccountMeta::new(accounts.user_token_account_y, false),
-            AccountMeta::new(accounts.caller_token_account_wsol, false),
-            AccountMeta::new(accounts.order, false),
-            AccountMeta::new_readonly(accounts.system_program, false),
-            AccountMeta::new_readonly(accounts.associated_token_program, false),
-            AccountMeta::new_readonly(accounts.token_mint_x_program, false),
-            AccountMeta::new_readonly(accounts.token_mint_y_program, false),
-            AccountMeta::new_readonly(accounts.token_program, false),
-        ]
+        let discriminator = [80, 85, 209, 72, 24, 206, 177, 108];
+
+        let data = discriminator.to_vec();
+
+        Ok(RemoveLiquidityAndAccountMetas {
+            discriminator,
+            remove_liquidity: DarklakeAmmRemoveLiquidityParams {
+                amount_lp: *amount_lp,
+                min_amount_x: *min_amount_x,
+                min_amount_y: *min_amount_y,
+            },
+            data,
+            account_metas: DarklakeAmmAddLiquidity {
+                user: *user,
+                token_mint_x: self.pool.token_mint_x,
+                token_mint_y: self.pool.token_mint_y,
+                token_mint_lp,
+                pool: self.key,
+                authority,
+                pool_token_reserve_x: self.pool.reserve_x,
+                pool_token_reserve_y: self.pool.reserve_y,
+                amm_config: self.pool.amm_config,
+                user_token_account_x,
+                user_token_account_y,
+                user_token_account_lp,
+                system_program: system_program::ID,
+                associated_token_program: spl_associated_token_account::ID,
+                token_mint_x_program: self.token_x_owner,
+                token_mint_y_program: self.token_y_owner,
+                token_program: spl_token::ID,
+            }
+            .into(),
+        })
     }
 }
 
@@ -983,6 +909,10 @@ impl DarklakeAmm {
             &self.program_id(),
         )
         .0
+    }
+
+    fn get_token_mint_lp(&self) -> Pubkey {
+        Pubkey::find_program_address(&[b"lp", self.key.as_ref()], &self.program_id()).0
     }
 
     fn get_order_token_account_wsol(&self, user: Pubkey) -> Pubkey {
