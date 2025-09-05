@@ -319,6 +319,14 @@ impl DarklakeSDK {
             data: finalize_and_account_metas.data(),
         };
 
+        let settle_transaction_config: RpcSendTransactionConfig = RpcSendTransactionConfig {
+            skip_preflight: false,
+            preflight_commitment: Some(CommitmentConfig::processed().commitment),
+            encoding: None,
+            max_retries: None,
+            min_context_slot: None,
+        };
+
         let compute_budget_ix = ComputeBudgetInstruction::set_compute_unit_limit(500_000);
 
         let program = self.client.program(DARKLAKE_PROGRAM_ID)?;
@@ -327,7 +335,7 @@ impl DarklakeSDK {
         let finalize_signature = request_builder
             .instruction(compute_budget_ix)
             .instruction(finalize_instruction)
-            .send_with_spinner_and_config(self.transaction_config)
+            .send_with_spinner_and_config(settle_transaction_config)
             .await?;
 
         Ok((swap_signature, finalize_signature))
