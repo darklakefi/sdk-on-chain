@@ -66,7 +66,7 @@ impl DarklakeSDK {
     }
 
     /// Create a new Darklake AMM instance from account data
-    async fn load_pool(&mut self, pool_key: Pubkey) -> Result<()> {
+    pub async fn load_pool(&mut self, pool_key: Pubkey) -> Result<()> {
         let rpc_client = self.client.program(DARKLAKE_PROGRAM_ID)?.rpc();
         let pool_account_data = rpc_client.get_account(&pool_key).await?;
 
@@ -449,9 +449,10 @@ impl DarklakeSDK {
 
     // MANUAL HANDLING (these are prone to changes in the future)
 
-    pub async fn update_accounts(
-        &mut self,
-    ) -> Result<()> {
+    // before calling swap_ix/finalize_ix/add_liquidity_ix/remove_liquidity_ix -
+    // load_pool has to be called at least once before and update_accounts before each function call
+
+    pub async fn update_accounts(&mut self) -> Result<()> {
         let pool_key = self.darklake_amm.as_ref().unwrap().key();
         let rpc_client = self.client.program(DARKLAKE_PROGRAM_ID)?.rpc();
         let pool_account_data = rpc_client.get_account(&pool_key).await?;
@@ -468,12 +469,7 @@ impl DarklakeSDK {
         Ok(())
     }
 
-    // before calling swap_ix - load_pool and update_accounts has to be called
-    pub async fn swap_ix(
-        &mut self,
-        swap_params: SwapParams,
-    ) -> Result<Instruction> {
-
+    pub async fn swap_ix(&mut self, swap_params: SwapParams) -> Result<Instruction> {
         let swap_and_account_metas = self
             .darklake_amm
             .as_ref()
@@ -488,17 +484,10 @@ impl DarklakeSDK {
         })
     }
 
-    pub async fn get_order_output_and_deadline(
-        &mut self,
-        user: Pubkey,
-    ) -> Result<(u64, u64)> {
+    pub async fn get_order_output_and_deadline(&mut self, user: Pubkey) -> Result<(u64, u64)> {
         let rpc_client = self.client.program(DARKLAKE_PROGRAM_ID)?.rpc();
 
-        let order_key = self
-            .darklake_amm
-            .as_ref()
-            .unwrap()
-            .get_order_pubkey(user)?;
+        let order_key = self.darklake_amm.as_ref().unwrap().get_order_pubkey(user)?;
 
         let order_data = rpc_client.get_account(&order_key).await?;
 
@@ -511,10 +500,7 @@ impl DarklakeSDK {
         Ok((output, deadline))
     }
 
-    pub async fn finalize_ix(
-        &mut self,
-        finalize_params: FinalizeParams,
-    ) -> Result<Instruction> {
+    pub async fn finalize_ix(&mut self, finalize_params: FinalizeParams) -> Result<Instruction> {
         let finalize_and_account_metas = self
             .darklake_amm
             .as_ref()
@@ -537,7 +523,6 @@ impl DarklakeSDK {
             .as_ref()
             .unwrap()
             .get_add_liquidity_and_account_metas(&add_liquidity_params)?;
-
 
         Ok(Instruction {
             program_id: DARKLAKE_PROGRAM_ID,
@@ -570,7 +555,7 @@ impl DarklakeSDK {
 }
 
 /// Get the pool address for a token pair
-pub fn get_pool_address(token_mint_x: Pubkey, token_mint_y: Pubkey) -> (Pubkey, Pubkey, Pubkey) {
+fn get_pool_address(token_mint_x: Pubkey, token_mint_y: Pubkey) -> (Pubkey, Pubkey, Pubkey) {
     // Convert token mints to bytes and ensure x is always below y by lexicographical order
     let (ordered_x, ordered_y) = if token_mint_x < token_mint_y {
         (token_mint_x, token_mint_y)
