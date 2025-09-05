@@ -65,8 +65,42 @@ impl DarklakeSDK {
         }
     }
 
+
+    /// Get the pool address for a token pair
+    fn get_pool_address(token_mint_x: Pubkey, token_mint_y: Pubkey) -> (Pubkey, Pubkey, Pubkey) {
+        // Convert token mints to bytes and ensure x is always below y by lexicographical order
+        let (ordered_x, ordered_y) = if token_mint_x < token_mint_y {
+            (token_mint_x, token_mint_y)
+        } else {
+            (token_mint_y, token_mint_x)
+        };
+
+        let amm_config_key = Pubkey::find_program_address(
+            &[AMM_CONFIG_SEED, &0u32.to_le_bytes()],
+            &DARKLAKE_PROGRAM_ID,
+        )
+        .0;
+
+        let pool_key = Pubkey::find_program_address(
+            &[
+                POOL_SEED,
+                amm_config_key.as_ref(),
+                ordered_x.as_ref(),
+                ordered_y.as_ref(),
+            ],
+            &DARKLAKE_PROGRAM_ID,
+        )
+        .0;
+
+        (pool_key, ordered_x, ordered_y)
+    }
+
+
+
     /// Create a new Darklake AMM instance from account data
-    pub async fn load_pool(&mut self, pool_key: Pubkey) -> Result<()> {
+    pub async fn load_pool(&mut self, token_x: Pubkey, token_y: Pubkey) -> Result<()> {
+        let (pool_key, _, _) = Self::get_pool_address(token_x, token_y);
+
         let rpc_client = self.client.program(DARKLAKE_PROGRAM_ID)?.rpc();
         let pool_account_data = rpc_client.get_account(&pool_key).await?;
 
@@ -99,10 +133,10 @@ impl DarklakeSDK {
     ) -> Result<Quote> {
         let rpc_client = self.client.program(DARKLAKE_PROGRAM_ID)?.rpc();
 
-        let (pool_key, _token_x, _token_y) = get_pool_address(token_in, token_out);
+        let (pool_key, _token_x, _token_y) = Self::get_pool_address(token_in, token_out);
 
         if self.darklake_amm.as_ref().unwrap().key() != pool_key {
-            self.load_pool(pool_key).await?;
+            self.load_pool(_token_x, _token_y).await?;
         }
 
         // update accounts
@@ -146,10 +180,10 @@ impl DarklakeSDK {
     ) -> Result<(Signature, Signature)> {
         let rpc_client = self.client.program(DARKLAKE_PROGRAM_ID)?.rpc();
 
-        let (pool_key, _token_x, _token_y) = get_pool_address(token_in, token_out);
+        let (pool_key, _token_x, _token_y) = Self::get_pool_address(token_in, token_out);
 
         if self.darklake_amm.as_ref().unwrap().key() != pool_key {
-            self.load_pool(pool_key).await?;
+            self.load_pool(_token_x, _token_y).await?;
         }
 
         // update accounts
@@ -309,7 +343,7 @@ impl DarklakeSDK {
     ) -> Result<Signature> {
         let rpc_client = self.client.program(DARKLAKE_PROGRAM_ID)?.rpc();
 
-        let (pool_key, _token_x, _token_y) = get_pool_address(token_x, token_y);
+        let (pool_key, _token_x, _token_y) = Self::get_pool_address(token_x, token_y);
 
         let max_amount_x = if _token_x != token_x {
             max_amount_y
@@ -323,7 +357,7 @@ impl DarklakeSDK {
         };
 
         if self.darklake_amm.as_ref().unwrap().key() != pool_key {
-            self.load_pool(pool_key).await?;
+            self.load_pool(_token_x, _token_y).await?;
         }
 
         // update accounts
@@ -383,7 +417,7 @@ impl DarklakeSDK {
     ) -> Result<Signature> {
         let rpc_client = self.client.program(DARKLAKE_PROGRAM_ID)?.rpc();
 
-        let (pool_key, _token_x, _token_y) = get_pool_address(token_x, token_y);
+        let (pool_key, _token_x, _token_y) = Self::get_pool_address(token_x, token_y);
 
         let min_amount_x = if _token_x != token_x {
             min_amount_y
@@ -397,7 +431,7 @@ impl DarklakeSDK {
         };
 
         if self.darklake_amm.as_ref().unwrap().key() != pool_key {
-            self.load_pool(pool_key).await?;
+            self.load_pool(_token_x, _token_y).await?;
         }
 
         // update accounts
@@ -552,33 +586,4 @@ impl DarklakeSDK {
     pub fn signer_pubkey(&self) -> Pubkey {
         self.client.program(DARKLAKE_PROGRAM_ID).unwrap().payer()
     }
-}
-
-/// Get the pool address for a token pair
-fn get_pool_address(token_mint_x: Pubkey, token_mint_y: Pubkey) -> (Pubkey, Pubkey, Pubkey) {
-    // Convert token mints to bytes and ensure x is always below y by lexicographical order
-    let (ordered_x, ordered_y) = if token_mint_x < token_mint_y {
-        (token_mint_x, token_mint_y)
-    } else {
-        (token_mint_y, token_mint_x)
-    };
-
-    let amm_config_key = Pubkey::find_program_address(
-        &[AMM_CONFIG_SEED, &0u32.to_le_bytes()],
-        &DARKLAKE_PROGRAM_ID,
-    )
-    .0;
-
-    let pool_key = Pubkey::find_program_address(
-        &[
-            POOL_SEED,
-            amm_config_key.as_ref(),
-            ordered_x.as_ref(),
-            ordered_y.as_ref(),
-        ],
-        &DARKLAKE_PROGRAM_ID,
-    )
-    .0;
-
-    (pool_key, ordered_x, ordered_y)
 }
