@@ -3,8 +3,7 @@ use dex_math::quote;
 
 use crate::utils::get_transfer_fee;
 use crate::{
-    amm::*, DarklakeAmmAddLiquidity, DarklakeAmmCancel, DarklakeAmmSettle, DarklakeAmmSlash,
-    DarklakeAmmSwap,
+    amm::*, DarklakeAmmAddLiquidity, DarklakeAmmCancel, DarklakeAmmRemoveLiquidity, DarklakeAmmSettle, DarklakeAmmSlash, DarklakeAmmSwap
 };
 
 use crate::proof::proof_generator::{
@@ -803,7 +802,7 @@ impl Amm for DarklakeAmm {
                 min_amount_y: *min_amount_y,
             },
             data,
-            account_metas: DarklakeAmmAddLiquidity {
+            account_metas: DarklakeAmmRemoveLiquidity {
                 user: *user,
                 token_mint_x: self.pool.token_mint_x,
                 token_mint_y: self.pool.token_mint_y,
