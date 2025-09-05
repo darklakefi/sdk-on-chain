@@ -304,7 +304,7 @@ impl DarklakeSDK {
             output: order.d_out,     // Will be populated by the SDK
             commitment: swap_and_account_metas.swap.c_min, // Will be populated by the SDK
             deadline: order.deadline,
-            current_slot: rpc_client.get_slot().await?,
+            current_slot: rpc_client.get_slot_with_commitment(CommitmentConfig::processed()).await?,
         };
 
         let finalize_and_account_metas = self
