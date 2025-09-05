@@ -135,7 +135,7 @@ impl DarklakeSDK {
 
         let (pool_key, _token_x, _token_y) = Self::get_pool_address(token_in, token_out);
 
-        if self.darklake_amm.as_ref().unwrap().key() != pool_key {
+        if self.darklake_amm.is_none() || self.darklake_amm.as_ref().unwrap().key() != pool_key {
             self.load_pool(_token_x, _token_y).await?;
         }
 
@@ -182,7 +182,7 @@ impl DarklakeSDK {
 
         let (pool_key, _token_x, _token_y) = Self::get_pool_address(token_in, token_out);
 
-        if self.darklake_amm.as_ref().unwrap().key() != pool_key {
+        if self.darklake_amm.is_none() || self.darklake_amm.as_ref().unwrap().key() != pool_key {
             self.load_pool(_token_x, _token_y).await?;
         }
 
@@ -356,7 +356,7 @@ impl DarklakeSDK {
             max_amount_y
         };
 
-        if self.darklake_amm.as_ref().unwrap().key() != pool_key {
+        if self.darklake_amm.is_none() || self.darklake_amm.as_ref().unwrap().key() != pool_key {
             self.load_pool(_token_x, _token_y).await?;
         }
 
@@ -430,7 +430,7 @@ impl DarklakeSDK {
             min_amount_y
         };
 
-        if self.darklake_amm.as_ref().unwrap().key() != pool_key {
+        if self.darklake_amm.is_none() || self.darklake_amm.as_ref().unwrap().key() != pool_key {
             self.load_pool(_token_x, _token_y).await?;
         }
 
