@@ -729,7 +729,10 @@ impl Amm for DarklakeAmm {
 
         let discriminator = [181, 157, 89, 67, 143, 182, 52, 72];
 
-        let data = discriminator.to_vec();
+        let mut data = discriminator.to_vec();
+        data.extend_from_slice(&amount_lp.to_le_bytes());
+        data.extend_from_slice(&max_amount_x.to_le_bytes());
+        data.extend_from_slice(&max_amount_y.to_le_bytes());
 
         Ok(AddLiquidityAndAccountMetas {
             discriminator,
@@ -787,7 +790,10 @@ impl Amm for DarklakeAmm {
 
         let discriminator = [80, 85, 209, 72, 24, 206, 177, 108];
 
-        let data = discriminator.to_vec();
+        let mut data = discriminator.to_vec();
+        data.extend_from_slice(&amount_lp.to_le_bytes());
+        data.extend_from_slice(&min_amount_x.to_le_bytes());
+        data.extend_from_slice(&min_amount_y.to_le_bytes());
 
         Ok(RemoveLiquidityAndAccountMetas {
             discriminator,
