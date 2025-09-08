@@ -168,19 +168,7 @@ impl DarklakeSDK {
         }
 
         // update accounts
-        let accounts_to_update = self.darklake_amm.as_ref().unwrap().get_accounts_to_update();
-        let mut account_map = HashMap::new();
-        for account_key in accounts_to_update {
-            let account = rpc_client.get_account(&account_key).await?;
-            account_map.insert(
-                account_key,
-                AccountData {
-                    data: account.data,
-                    owner: account.owner,
-                },
-            );
-        }
-        self.darklake_amm.as_mut().unwrap().update(&account_map)?;
+        self.update_accounts().await?;
 
         let salt = generate_random_salt();
 
@@ -387,19 +375,7 @@ impl DarklakeSDK {
         }
 
         // update accounts
-        let accounts_to_update = self.darklake_amm.as_ref().unwrap().get_accounts_to_update();
-        let mut account_map = HashMap::new();
-        for account_key in accounts_to_update {
-            let account = rpc_client.get_account(&account_key).await?;
-            account_map.insert(
-                account_key,
-                AccountData {
-                    data: account.data,
-                    owner: account.owner,
-                },
-            );
-        }
-        self.darklake_amm.as_mut().unwrap().update(&account_map)?;
+        self.update_accounts().await?;
 
         let payer_pubkey: Pubkey = self.client.program(DARKLAKE_PROGRAM_ID).unwrap().payer();
 
@@ -487,19 +463,7 @@ impl DarklakeSDK {
         }
 
         // update accounts
-        let accounts_to_update = self.darklake_amm.as_ref().unwrap().get_accounts_to_update();
-        let mut account_map = HashMap::new();
-        for account_key in accounts_to_update {
-            let account = rpc_client.get_account(&account_key).await?;
-            account_map.insert(
-                account_key,
-                AccountData {
-                    data: account.data,
-                    owner: account.owner,
-                },
-            );
-        }
-        self.darklake_amm.as_mut().unwrap().update(&account_map)?;
+        self.update_accounts().await?;
 
         let payer_pubkey: Pubkey = self.client.program(DARKLAKE_PROGRAM_ID).unwrap().payer();
 
@@ -546,7 +510,7 @@ impl DarklakeSDK {
     // load_pool has to be called at least once before and update_accounts before each function call
 
     /// Create a new Darklake AMM instance from account data
-    pub async fn load_pool(&mut self, token_x: Pubkey, token_y: Pubkey) -> Result<()> {
+    pub async fn load_pool(&mut self, token_x: Pubkey, token_y: Pubkey) -> Result<(Pubkey, Pubkey, Pubkey)> {
         let (pool_key, _, _) = Self::get_pool_address(token_x, token_y);
 
         let rpc_client = self.client.program(DARKLAKE_PROGRAM_ID)?.rpc();
@@ -561,7 +525,9 @@ impl DarklakeSDK {
         };
 
         self.darklake_amm = Some(DarklakeAmm::load_pool(&pool_key_and_account)?);
-        Ok(())
+
+        // returns sorted token mints
+        Ok((pool_key, token_x, token_y))
     }
 
     pub async fn update_accounts(&mut self) -> Result<()> {
