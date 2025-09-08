@@ -33,7 +33,7 @@ use anyhow::{Context, Result};
 use solana_rpc_client_api::config::RpcSendTransactionConfig;
 use solana_sdk::{
     commitment_config::CommitmentConfig, compute_budget::ComputeBudgetInstruction,
-    instruction::Instruction, pubkey::Pubkey, signature::Signature,
+    instruction::Instruction, pubkey::Pubkey, signature::Signature, signer::Signer,
 };
 use tokio::time::{sleep, Duration};
 
@@ -118,6 +118,7 @@ impl DarklakeSDK {
     /// * `token_out` - The output token mint
     /// * `amount_in` - The amount of input tokens
     /// * `min_amount_out` - The minimum amount of output tokens expected
+    /// * `token_owner` - Optional token owner keypair. If not provided, uses the payer as token owner
     ///
     /// # Returns
     /// Returns the transaction signature of the executed swap
@@ -127,6 +128,7 @@ impl DarklakeSDK {
         token_out: Pubkey,
         amount_in: u64,
         min_amount_out: u64,
+        token_owner: Option<Keypair>,
     ) -> Result<(Signature, Signature)> {
         let rpc_client = self.client.program(DARKLAKE_PROGRAM_ID)?.rpc();
 
@@ -154,11 +156,15 @@ impl DarklakeSDK {
         let salt = generate_random_salt();
 
         let payer_pubkey: Pubkey = self.client.program(DARKLAKE_PROGRAM_ID).unwrap().payer();
+        let token_owner_pubkey = match &token_owner {
+            Some(token_owner) => token_owner.pubkey(),
+            None => payer_pubkey,
+        };
 
         let swap_params = SwapParams {
             source_mint: token_in,
             destination_mint: token_out,
-            token_transfer_authority: payer_pubkey,
+            token_transfer_authority: token_owner_pubkey,
             in_amount: amount_in, // 1 token (assuming 6 decimals)
             swap_mode: SwapMode::ExactIn,
             min_out: min_amount_out, // 0.95 tokens out (5% slippage tolerance)
@@ -181,13 +187,21 @@ impl DarklakeSDK {
         let compute_budget_ix = ComputeBudgetInstruction::set_compute_unit_limit(250_000);
 
         let program = self.client.program(DARKLAKE_PROGRAM_ID)?;
-        let request_builder = program.request();
 
-        let swap_signature = request_builder
-            .instruction(compute_budget_ix)
-            .instruction(swap_instruction)
-            .send_with_spinner_and_config(self.transaction_config)
-            .await?;
+        let swap_signature = if let Some(token_owner) = token_owner {
+            program.request()
+                .instruction(compute_budget_ix)
+                .instruction(swap_instruction)
+                .signer(token_owner)
+                .send_with_spinner_and_config(self.transaction_config)
+                .await?
+        } else {
+            program.request()
+                .instruction(compute_budget_ix)
+                .instruction(swap_instruction)
+                .send_with_spinner_and_config(self.transaction_config)
+                .await?
+        };
 
         let order_key = self
             .darklake_amm
@@ -246,8 +260,8 @@ impl DarklakeSDK {
         self.darklake_amm.as_mut().unwrap().update(&account_map)?;
 
         let finalize_params = FinalizeParams {
-            settle_signer: payer_pubkey,
-            order_owner: payer_pubkey,
+            settle_signer: payer_pubkey,  // Always payer
+            order_owner: token_owner_pubkey, // Use token_owner (or payer as fallback)
             unwrap_wsol: false,           // Set to true if output is wrapped SOL
             min_out: swap_params.min_out, // Same min_out as swap
             salt: swap_params.salt,       // Same salt as swap
