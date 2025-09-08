@@ -23,11 +23,12 @@ pub use account_metas::*;
 pub use amm::*;
 use anchor_client::{solana_sdk::signer::keypair::Keypair, Client, Cluster};
 pub use darklake_amm::{DarklakeAmm};
+use spl_token::native_mint;
 
 use crate::{
-    constants::{AMM_CONFIG, DARKLAKE_PROGRAM_ID, POOL_SEED},
+    constants::{AMM_CONFIG, DARKLAKE_PROGRAM_ID, POOL_SEED, SOL_MINT},
     darklake_amm::Order,
-    utils::generate_random_salt,
+    utils::{generate_random_salt, get_wrap_sol_to_wsol_instructions, get_close_wsol_instructions},
 };
 use anyhow::{Context, Result};
 use solana_rpc_client_api::config::RpcSendTransactionConfig;
@@ -83,6 +84,20 @@ impl DarklakeSDK {
     ) -> Result<Quote> {
         let rpc_client = self.client.program(DARKLAKE_PROGRAM_ID)?.rpc();
 
+        let is_from_sol = token_in == SOL_MINT;
+        let is_to_sol = token_out == SOL_MINT;
+
+        let _token_in = if is_from_sol {
+            native_mint::ID
+        } else {
+            token_in
+        };
+        let _token_out = if is_to_sol {
+            native_mint::ID
+        } else {
+            token_out
+        };
+
         let (pool_key, _token_x, _token_y) = Self::get_pool_address(token_in, token_out);
 
         if self.darklake_amm.is_none() || self.darklake_amm.as_ref().unwrap().key() != pool_key {
@@ -132,7 +147,21 @@ impl DarklakeSDK {
     ) -> Result<(Signature, Signature)> {
         let rpc_client = self.client.program(DARKLAKE_PROGRAM_ID)?.rpc();
 
-        let (pool_key, _token_x, _token_y) = Self::get_pool_address(token_in, token_out);
+        let is_from_sol = token_in == SOL_MINT;
+        let is_to_sol = token_out == SOL_MINT;
+
+        let _token_in = if is_from_sol {
+            native_mint::ID
+        } else {
+            token_in
+        };
+        let _token_out = if is_to_sol {
+            native_mint::ID
+        } else {
+            token_out
+        };
+
+        let (pool_key, _token_x, _token_y) = Self::get_pool_address(_token_in, _token_out);
 
         if self.darklake_amm.is_none() || self.darklake_amm.as_ref().unwrap().key() != pool_key {
             self.load_pool(_token_x, _token_y).await?;
@@ -184,21 +213,29 @@ impl DarklakeSDK {
             data: swap_and_account_metas.data,
         };
 
-        let compute_budget_ix = ComputeBudgetInstruction::set_compute_unit_limit(250_000);
+        let compute_budget_ix = ComputeBudgetInstruction::set_compute_unit_limit(300_000);
 
         let program = self.client.program(DARKLAKE_PROGRAM_ID)?;
 
+        let mut request_builder = program.request();
+        request_builder = request_builder.instruction(compute_budget_ix);
+
+        if is_from_sol {
+            let sol_to_wsol_instructions = get_wrap_sol_to_wsol_instructions(token_owner_pubkey, amount_in)?;
+            request_builder = request_builder.instruction(sol_to_wsol_instructions[0].clone());
+            request_builder = request_builder.instruction(sol_to_wsol_instructions[1].clone());
+            request_builder = request_builder.instruction(sol_to_wsol_instructions[2].clone());
+        }
+
+        request_builder = request_builder.instruction(swap_instruction);
+
         let swap_signature = if let Some(token_owner) = token_owner {
-            program.request()
-                .instruction(compute_budget_ix)
-                .instruction(swap_instruction)
+            request_builder
                 .signer(token_owner)
                 .send_with_spinner_and_config(self.transaction_config)
                 .await?
         } else {
-            program.request()
-                .instruction(compute_budget_ix)
-                .instruction(swap_instruction)
+            request_builder
                 .send_with_spinner_and_config(self.transaction_config)
                 .await?
         };
@@ -262,7 +299,7 @@ impl DarklakeSDK {
         let finalize_params = FinalizeParams {
             settle_signer: payer_pubkey,  // Always payer
             order_owner: token_owner_pubkey, // Use token_owner (or payer as fallback)
-            unwrap_wsol: false,           // Set to true if output is wrapped SOL
+            unwrap_wsol: is_to_sol,           // Set to true if output is wrapped SOL
             min_out: swap_params.min_out, // Same min_out as swap
             salt: swap_params.salt,       // Same salt as swap
             output: order.d_out,          // Will be populated by the SDK
@@ -317,14 +354,29 @@ impl DarklakeSDK {
     ) -> Result<Signature> {
         let rpc_client = self.client.program(DARKLAKE_PROGRAM_ID)?.rpc();
 
-        let (pool_key, _token_x, _token_y) = Self::get_pool_address(token_x, token_y);
+        let is_x_sol = token_x == SOL_MINT;
+        let is_y_sol = token_y == SOL_MINT;
 
-        let max_amount_x = if _token_x != token_x {
+        let token_x_post_sol = if is_x_sol {
+            native_mint::ID
+        } else {
+            token_x
+        };
+        let token_y_post_sol = if is_y_sol {
+            native_mint::ID
+        } else {
+            token_y
+        };
+
+
+        let (pool_key, _token_x, _token_y) = Self::get_pool_address(token_x_post_sol, token_y_post_sol);
+
+        let max_amount_x = if _token_x != token_x_post_sol {
             max_amount_y
         } else {
             max_amount_x
         };
-        let max_amount_y = if _token_x != token_x {
+        let max_amount_y = if _token_x != token_x_post_sol {
             max_amount_x
         } else {
             max_amount_y
@@ -371,7 +423,19 @@ impl DarklakeSDK {
         };
 
         let program = self.client.program(DARKLAKE_PROGRAM_ID)?;
-        let request_builder = program.request();
+        let mut request_builder = program.request();
+
+        if is_x_sol {
+            let sol_to_wsol_instructions = get_wrap_sol_to_wsol_instructions(payer_pubkey, max_amount_x)?;
+            request_builder = request_builder.instruction(sol_to_wsol_instructions[0].clone());
+            request_builder = request_builder.instruction(sol_to_wsol_instructions[1].clone());
+            request_builder = request_builder.instruction(sol_to_wsol_instructions[2].clone());
+        } else if is_y_sol {
+            let sol_to_wsol_instructions = get_wrap_sol_to_wsol_instructions(payer_pubkey, max_amount_y)?;
+            request_builder = request_builder.instruction(sol_to_wsol_instructions[0].clone());
+            request_builder = request_builder.instruction(sol_to_wsol_instructions[1].clone());
+            request_builder = request_builder.instruction(sol_to_wsol_instructions[2].clone());
+        }
 
         let add_liquidity_signature = request_builder
             .instruction(add_liquidity_instruction)
@@ -391,14 +455,28 @@ impl DarklakeSDK {
     ) -> Result<Signature> {
         let rpc_client = self.client.program(DARKLAKE_PROGRAM_ID)?.rpc();
 
-        let (pool_key, _token_x, _token_y) = Self::get_pool_address(token_x, token_y);
+        let is_x_sol = token_x == SOL_MINT;
+        let is_y_sol = token_y == SOL_MINT;
 
-        let min_amount_x = if _token_x != token_x {
+        let token_x_post_sol = if is_x_sol {
+            native_mint::ID
+        } else {
+            token_x
+        };
+        let token_y_post_sol = if is_y_sol {
+            native_mint::ID
+        } else {
+            token_y
+        };
+
+        let (pool_key, _token_x, _token_y) = Self::get_pool_address(token_x_post_sol, token_y_post_sol);
+
+        let min_amount_x = if _token_x != token_x_post_sol {
             min_amount_y
         } else {
             min_amount_x
         };
-        let min_amount_y = if _token_x != token_x {
+        let min_amount_y = if _token_x != token_x_post_sol {
             min_amount_x
         } else {
             min_amount_y
@@ -445,7 +523,14 @@ impl DarklakeSDK {
         };
 
         let program = self.client.program(DARKLAKE_PROGRAM_ID)?;
-        let request_builder = program.request();
+        let mut request_builder = program.request();
+
+        // Add close WSOL instructions if either token is SOL (user can't have multiple WSOL accounts)
+        if is_x_sol || is_y_sol {
+            let close_wsol_instructions = get_close_wsol_instructions(payer_pubkey)?;
+            request_builder = request_builder.instruction(close_wsol_instructions[0].clone());
+            request_builder = request_builder.instruction(close_wsol_instructions[1].clone());
+        }
 
         let remove_liquidity_signature = request_builder
             .instruction(remove_liquidity_instruction)

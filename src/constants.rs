@@ -6,6 +6,8 @@ pub const MAX_PERCENTAGE: u64 = 1_000_000; // 100% in basis points
 
 pub const DARKLAKE_PROGRAM_ID: Pubkey = pubkey!("darkr3FB87qAZmgLwKov6Hk9Yiah5UT4rUYu8Zhthw1");
 
+pub const SOL_MINT: Pubkey = pubkey!("So11111111111111111111111111111111111111111");
+
 // SEEDS
 pub const POOL_SEED: &[u8] = b"pool";
 pub const AMM_CONFIG_SEED: &[u8] = b"amm_config";
