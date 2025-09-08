@@ -27,6 +27,21 @@ let payer = Keypair::new(); // Your wallet keypair
 let mut sdk = DarklakeSDK::new("https://api.devnet.solana.com", payer);
 ```
 
+## ⚠️ Important: SOL/WSOL Handling
+
+**The Darklake DEX does not support direct SOL pairs - only WSOL (Wrapped SOL) pairs are supported.**
+
+### Automatic Handling (Default Mode)
+The high-level methods (`swap`, `add_liquidity`, `remove_liquidity`) automatically handle SOL/WSOL conversion by:
+- Adding wrap instructions when SOL is provided as input
+- Adding unwrap instructions when WSOL is received as output
+
+### Manual Handling (Manual Mode)
+The low-level instruction methods (`swap_ix`, `finalize_ix`, `add_liquidity_ix`, `remove_liquidity_ix`) **do not** automatically handle SOL/WSOL conversion. When using these methods:
+- You must manually add wrap/unwrap instructions if needed
+- Ensure proper WSOL token account management
+- Supply the `unwrap_wsol` parameter in `FinalizeParams` if necessary or add a WSOL token account closing.
+
 ## 📖 Usage Patterns
 
 ### 1. Default Mode (Recommended for most users)
@@ -39,18 +54,18 @@ The default mode provides high-level methods that handle all the complexity for 
 use solana_sdk::pubkey::Pubkey;
 
 // Define token mints
-let token_in = Pubkey::from_str("So11111111111111111111111111111111111111112").unwrap(); // SOL
+let token_in = Pubkey::from_str("So11111111111111111111111111111111111111112").unwrap(); // WSOL (Wrapped SOL)
 let token_out = Pubkey::from_str("EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v").unwrap(); // USDC
 
 // Get a quote first
-let quote = sdk.quote(token_in, token_out, 1_000_000).await?; // 1 SOL
+let quote = sdk.quote(token_in, token_out, 1_000_000).await?; // 1 WSOL
 println!("Expected output: {}", quote.out_amount);
 
 // Execute the swap
 let (swap_signature, finalize_signature) = sdk.swap(
     token_in,
     token_out,
-    1_000_000,  // 1 SOL (in lamports)
+    1_000_000,  // 1 WSOL (in lamports)
     950_000,    // Minimum 0.95 USDC out (5% slippage)
 ).await?;
 
@@ -61,8 +76,8 @@ println!("Finalize signature: {}", finalize_signature);
 #### Adding Liquidity
 
 ```rust
-let token_x = Pubkey::from_str("So11111111111111111111111111111111111111112").unwrap();
-let token_y = Pubkey::from_str("EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v").unwrap();
+let token_x = Pubkey::from_str("So11111111111111111111111111111111111111112").unwrap(); // WSOL
+let token_y = Pubkey::from_str("EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v").unwrap(); // USDC
 
 let signature = sdk.add_liquidity(
     token_x,
@@ -134,7 +149,7 @@ let order = sdk.get_order(sdk.signer_pubkey()).await?;
 let finalize_params = FinalizeParams {
     settle_signer: sdk.signer_pubkey(),
     order_owner: sdk.signer_pubkey(),
-    unwrap_wsol: false, // Set to true if output is wrapped SOL
+    unwrap_wsol: true, // Set to true if output is WSOL and you want to unwrap it to SOL (otherwise can manually add a WSOL account close instruction)
     min_out: 950_000,
     salt: [1, 2, 3, 4, 5, 6, 7, 8],
     output: order.d_out,
@@ -255,7 +270,7 @@ pub struct SwapParams {
 pub struct FinalizeParams {
     pub settle_signer: Pubkey,
     pub order_owner: Pubkey,
-    pub unwrap_wsol: bool,
+    pub unwrap_wsol: bool, // Set to true if output is WSOL and you want to unwrap it to SOL
     pub min_out: u64,
     pub salt: [u8; 8],
     pub output: u64,
