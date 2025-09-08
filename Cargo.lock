@@ -5054,6 +5054,7 @@ dependencies = [
  "bincode",
  "dex-math",
  "hex",
+ "lazy_static",
  "log",
  "num-bigint 0.4.6",
  "num-traits",

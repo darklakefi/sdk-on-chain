@@ -22,9 +22,13 @@ use std::{collections::HashMap, rc::Rc, str::FromStr};
 pub use account_metas::*;
 pub use amm::*;
 use anchor_client::{solana_sdk::signer::keypair::Keypair, Client, Cluster};
-pub use darklake_amm::{DarklakeAmm, DARKLAKE_PROGRAM_ID};
+pub use darklake_amm::{DarklakeAmm};
 
-use crate::{darklake_amm::Order, utils::generate_random_salt};
+use crate::{
+    constants::{AMM_CONFIG, DARKLAKE_PROGRAM_ID, POOL_SEED},
+    darklake_amm::Order,
+    utils::generate_random_salt,
+};
 use anyhow::{Context, Result};
 use solana_rpc_client_api::config::RpcSendTransactionConfig;
 use solana_sdk::{
@@ -32,9 +36,6 @@ use solana_sdk::{
     instruction::Instruction, pubkey::Pubkey, signature::Signature,
 };
 use tokio::time::{sleep, Duration};
-
-const POOL_SEED: &[u8] = b"pool";
-const AMM_CONFIG_SEED: &[u8] = b"amm_config";
 
 /// Stateful Darklake SDK that holds RPC client and signer
 pub struct DarklakeSDK {
@@ -63,57 +64,6 @@ impl DarklakeSDK {
             darklake_amm: None,
             transaction_config,
         }
-    }
-
-
-    /// Get the pool address for a token pair
-    fn get_pool_address(token_mint_x: Pubkey, token_mint_y: Pubkey) -> (Pubkey, Pubkey, Pubkey) {
-        // Convert token mints to bytes and ensure x is always below y by lexicographical order
-        let (ordered_x, ordered_y) = if token_mint_x < token_mint_y {
-            (token_mint_x, token_mint_y)
-        } else {
-            (token_mint_y, token_mint_x)
-        };
-
-        let amm_config_key = Pubkey::find_program_address(
-            &[AMM_CONFIG_SEED, &0u32.to_le_bytes()],
-            &DARKLAKE_PROGRAM_ID,
-        )
-        .0;
-
-        let pool_key = Pubkey::find_program_address(
-            &[
-                POOL_SEED,
-                amm_config_key.as_ref(),
-                ordered_x.as_ref(),
-                ordered_y.as_ref(),
-            ],
-            &DARKLAKE_PROGRAM_ID,
-        )
-        .0;
-
-        (pool_key, ordered_x, ordered_y)
-    }
-
-
-
-    /// Create a new Darklake AMM instance from account data
-    pub async fn load_pool(&mut self, token_x: Pubkey, token_y: Pubkey) -> Result<()> {
-        let (pool_key, _, _) = Self::get_pool_address(token_x, token_y);
-
-        let rpc_client = self.client.program(DARKLAKE_PROGRAM_ID)?.rpc();
-        let pool_account_data = rpc_client.get_account(&pool_key).await?;
-
-        let pool_key_and_account = KeyedAccount {
-            key: pool_key,
-            account: AccountData {
-                data: pool_account_data.data.to_vec(),
-                owner: DARKLAKE_PROGRAM_ID,
-            },
-        };
-
-        self.darklake_amm = Some(DarklakeAmm::load_pool(&pool_key_and_account)?);
-        Ok(())
     }
 
     /// Get a quote for a swap
@@ -301,10 +251,12 @@ impl DarklakeSDK {
             unwrap_wsol: false,           // Set to true if output is wrapped SOL
             min_out: swap_params.min_out, // Same min_out as swap
             salt: swap_params.salt,       // Same salt as swap
-            output: order.d_out,     // Will be populated by the SDK
+            output: order.d_out,          // Will be populated by the SDK
             commitment: swap_and_account_metas.swap.c_min, // Will be populated by the SDK
             deadline: order.deadline,
-            current_slot: rpc_client.get_slot_with_commitment(CommitmentConfig::processed()).await?,
+            current_slot: rpc_client
+                .get_slot_with_commitment(CommitmentConfig::processed())
+                .await?,
         };
 
         let finalize_and_account_metas = self
@@ -494,6 +446,25 @@ impl DarklakeSDK {
     // before calling swap_ix/finalize_ix/add_liquidity_ix/remove_liquidity_ix -
     // load_pool has to be called at least once before and update_accounts before each function call
 
+    /// Create a new Darklake AMM instance from account data
+    pub async fn load_pool(&mut self, token_x: Pubkey, token_y: Pubkey) -> Result<()> {
+        let (pool_key, _, _) = Self::get_pool_address(token_x, token_y);
+
+        let rpc_client = self.client.program(DARKLAKE_PROGRAM_ID)?.rpc();
+        let pool_account_data = rpc_client.get_account(&pool_key).await?;
+
+        let pool_key_and_account = KeyedAccount {
+            key: pool_key,
+            account: AccountData {
+                data: pool_account_data.data.to_vec(),
+                owner: DARKLAKE_PROGRAM_ID,
+            },
+        };
+
+        self.darklake_amm = Some(DarklakeAmm::load_pool(&pool_key_and_account)?);
+        Ok(())
+    }
+
     pub async fn update_accounts(&mut self) -> Result<()> {
         let rpc_client = self.client.program(DARKLAKE_PROGRAM_ID)?.rpc();
 
@@ -529,6 +500,7 @@ impl DarklakeSDK {
         })
     }
 
+    // does not require load_pool or update_accounts is a standalone function after new() is called
     pub async fn get_order(&mut self, user: Pubkey) -> Result<Order> {
         let rpc_client = self.client.program(DARKLAKE_PROGRAM_ID)?.rpc();
 
@@ -593,8 +565,33 @@ impl DarklakeSDK {
         })
     }
 
+    /// Getters
     /// Get the signer's public key
     pub fn signer_pubkey(&self) -> Pubkey {
         self.client.program(DARKLAKE_PROGRAM_ID).unwrap().payer()
+    }
+
+    /// Helpers internal methods
+    /// Get the pool address for a token pair
+    fn get_pool_address(token_mint_x: Pubkey, token_mint_y: Pubkey) -> (Pubkey, Pubkey, Pubkey) {
+        // Convert token mints to bytes and ensure x is always below y by lexicographical order
+        let (ordered_x, ordered_y) = if token_mint_x < token_mint_y {
+            (token_mint_x, token_mint_y)
+        } else {
+            (token_mint_y, token_mint_x)
+        };
+
+        let pool_key = Pubkey::find_program_address(
+            &[
+                POOL_SEED,
+                AMM_CONFIG.as_ref(),
+                ordered_x.as_ref(),
+                ordered_y.as_ref(),
+            ],
+            &DARKLAKE_PROGRAM_ID,
+        )
+        .0;
+
+        (pool_key, ordered_x, ordered_y)
     }
 }
