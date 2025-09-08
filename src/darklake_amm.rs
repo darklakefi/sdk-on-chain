@@ -1,9 +1,11 @@
 use anchor_lang::prelude::*;
 use dex_math::quote;
 
+use crate::constants::{AUTHORITY_SEED, DARKLAKE_PROGRAM_ID, LIQUIDITY_SEED, ORDER_SEED, ORDER_WSOL_SEED, POOL_WSOL_RESERVE_SEED};
 use crate::utils::get_transfer_fee;
 use crate::{
-    amm::*, DarklakeAmmAddLiquidity, DarklakeAmmCancel, DarklakeAmmRemoveLiquidity, DarklakeAmmSettle, DarklakeAmmSlash, DarklakeAmmSwap
+    amm::*, DarklakeAmmAddLiquidity, DarklakeAmmCancel, DarklakeAmmRemoveLiquidity,
+    DarklakeAmmSettle, DarklakeAmmSlash, DarklakeAmmSwap,
 };
 
 use crate::proof::proof_generator::{
@@ -17,7 +19,7 @@ use crate::proof::utils::{
 use anchor_lang::{system_program, AnchorDeserialize, AnchorSerialize};
 use anyhow::{bail, Context, Result};
 use rust_decimal::Decimal;
-use solana_sdk::{program_pack::Pack, pubkey, pubkey::Pubkey};
+use solana_sdk::{program_pack::Pack, pubkey::Pubkey};
 use spl_token::{native_mint, state::Account as SplTokenAccount};
 use spl_token_2022::extension::{
     transfer_fee::TransferFeeConfig, BaseStateWithExtensions, StateWithExtensions,
@@ -110,8 +112,6 @@ pub struct Pool {
 
     pub padding: [u64; 4],
 }
-
-pub const DARKLAKE_PROGRAM_ID: Pubkey = pubkey!("darkr3FB87qAZmgLwKov6Hk9Yiah5UT4rUYu8Zhthw1");
 
 impl Amm for DarklakeAmm {
     fn load_pool(pool: &KeyedAccount) -> Result<Self>
@@ -884,7 +884,7 @@ impl DarklakeAmm {
     }
 
     fn get_authority(&self) -> Pubkey {
-        Pubkey::find_program_address(&[b"authority"], &self.program_id()).0
+        Pubkey::find_program_address(&[AUTHORITY_SEED], &self.program_id()).0
     }
 
     fn get_user_token_account(
@@ -902,7 +902,7 @@ impl DarklakeAmm {
 
     fn get_pool_wsol_reserve(&self) -> Pubkey {
         Pubkey::find_program_address(
-            &[b"pool_wsol_reserve", self.key.as_ref()],
+            &[POOL_WSOL_RESERVE_SEED, self.key.as_ref()],
             &self.program_id(),
         )
         .0
@@ -910,19 +910,19 @@ impl DarklakeAmm {
 
     fn get_order(&self, user: Pubkey) -> Pubkey {
         Pubkey::find_program_address(
-            &[b"order", self.key.as_ref(), user.as_ref()],
+            &[ORDER_SEED, self.key.as_ref(), user.as_ref()],
             &self.program_id(),
         )
         .0
     }
 
     fn get_token_mint_lp(&self) -> Pubkey {
-        Pubkey::find_program_address(&[b"lp", self.key.as_ref()], &self.program_id()).0
+        Pubkey::find_program_address(&[LIQUIDITY_SEED, self.key.as_ref()], &self.program_id()).0
     }
 
     fn get_order_token_account_wsol(&self, user: Pubkey) -> Pubkey {
         Pubkey::find_program_address(
-            &[b"order_wsol", self.key.as_ref(), user.as_ref()],
+            &[ORDER_WSOL_SEED, self.key.as_ref(), user.as_ref()],
             &self.program_id(),
         )
         .0
