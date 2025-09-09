@@ -415,14 +415,14 @@ impl DarklakeSDK {
         let create_token_x_ata_ix = spl_associated_token_account::instruction::create_associated_token_account_idempotent(
             &user,
             &user,
-            &token_x_post_sol,
+            &_token_x,
             &token_x_owner,
         );
 
         let create_token_y_ata_ix = spl_associated_token_account::instruction::create_associated_token_account_idempotent(
             &user,
             &user,
-            &token_y_post_sol,
+            &_token_y,
             &token_y_owner,
         );
 
