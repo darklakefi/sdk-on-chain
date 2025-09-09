@@ -249,8 +249,16 @@ impl DarklakeSDK {
         // update accounts
         self.update_accounts().await?;
 
+        let settler = settle_signer.unwrap_or(order.trader);
+        let create_wsol_ata_ix = spl_associated_token_account::instruction::create_associated_token_account_idempotent(
+            &settler,
+            &settler,
+            &native_mint::ID,
+            &spl_token::ID,
+        );
+
         let finalize_params = FinalizeParams {
-            settle_signer: settle_signer.unwrap_or(order.trader),  // who settles the order
+            settle_signer: settler,  // who settles the order
             order_owner: order.trader, // who owns the order
             unwrap_wsol,           // Set to true if output is wrapped SOL
             min_out, // Same min_out as swap
@@ -267,8 +275,7 @@ impl DarklakeSDK {
 
         let compute_budget_ix = ComputeBudgetInstruction::set_compute_unit_limit(500_000);
 
-        let mut instructions = vec![compute_budget_ix];
-        instructions.push(finalize_instruction);
+        let instructions = vec![compute_budget_ix, create_wsol_ata_ix, finalize_instruction];
 
         let finalize_transaction = Transaction::new_unsigned(
             Message::new(
