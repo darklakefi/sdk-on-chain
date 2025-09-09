@@ -96,7 +96,7 @@ impl DarklakeSDK {
             token_out
         };
 
-        let (pool_key, _token_x, _token_y) = Self::get_pool_address(token_in, token_out);
+        let (pool_key, _token_x, _token_y) = Self::get_pool_address(_token_in, _token_out);
 
         if self.darklake_amm.is_none() || self.darklake_amm.as_ref().unwrap().key() != pool_key {
             self.load_pool(_token_x, _token_y).await?;
