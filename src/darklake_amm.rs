@@ -927,4 +927,8 @@ impl DarklakeAmm {
         )
         .0
     }
+
+    pub fn get_token_owners(&self) -> (Pubkey, Pubkey) {
+        (self.token_x_owner, self.token_y_owner)
+    }
 }

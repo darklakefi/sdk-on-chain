@@ -401,6 +401,23 @@ impl DarklakeSDK {
         // update accounts
         self.update_accounts().await?;
 
+        let (token_x_owner, token_y_owner) = self.darklake_amm.as_ref().unwrap().get_token_owners();
+
+
+        // make sure the user has the token accounts
+        let create_token_x_ata_ix = spl_associated_token_account::instruction::create_associated_token_account_idempotent(
+            &user,
+            &user,
+            &token_x_post_sol,
+            &token_x_owner,
+        );
+
+        let create_token_y_ata_ix = spl_associated_token_account::instruction::create_associated_token_account_idempotent(
+            &user,
+            &user,
+            &token_y_post_sol,
+            &token_y_owner,
+        );
 
         let remove_liquidity_params = RemoveLiquidityParams {
             amount_lp,
@@ -411,7 +428,7 @@ impl DarklakeSDK {
 
         let remove_liquidity_instruction = self.remove_liquidity_ix(remove_liquidity_params).await?;
 
-        let mut instructions = vec![remove_liquidity_instruction];
+        let mut instructions = vec![create_token_x_ata_ix, create_token_y_ata_ix, remove_liquidity_instruction];
 
         // Add close WSOL instructions if either token is SOL (user can't have multiple WSOL accounts)
         if is_x_sol || is_y_sol {
