@@ -82,8 +82,6 @@ impl DarklakeSDK {
         token_out: Pubkey,
         amount_in: u64,
     ) -> Result<Quote> {
-        let rpc_client = self.client.program(DARKLAKE_PROGRAM_ID)?.rpc();
-
         let is_from_sol = token_in == SOL_MINT;
         let is_to_sol = token_out == SOL_MINT;
 
@@ -105,19 +103,7 @@ impl DarklakeSDK {
         }
 
         // update accounts
-        let accounts_to_update = self.darklake_amm.as_ref().unwrap().get_accounts_to_update();
-        let mut account_map = HashMap::new();
-        for account_key in accounts_to_update {
-            let account = rpc_client.get_account(&account_key).await?;
-            account_map.insert(
-                account_key,
-                AccountData {
-                    data: account.data,
-                    owner: account.owner,
-                },
-            );
-        }
-        self.darklake_amm.as_mut().unwrap().update(&account_map)?;
+        self.update_accounts().await?;
 
         self.darklake_amm.as_ref().unwrap().quote(&QuoteParams {
             input_mint: token_in,
@@ -270,19 +256,7 @@ impl DarklakeSDK {
             .parse_order_data(&order_data.unwrap().data)?;
 
         // update accounts
-        let accounts_to_update = self.darklake_amm.as_ref().unwrap().get_accounts_to_update();
-        let mut account_map = HashMap::new();
-        for account_key in accounts_to_update {
-            let account = rpc_client.get_account(&account_key).await?;
-            account_map.insert(
-                account_key,
-                AccountData {
-                    data: account.data,
-                    owner: account.owner,
-                },
-            );
-        }
-        self.darklake_amm.as_mut().unwrap().update(&account_map)?;
+        self.update_accounts().await?;
 
         let finalize_params = FinalizeParams {
             settle_signer: payer_pubkey,  // Always payer
