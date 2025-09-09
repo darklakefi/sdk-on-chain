@@ -34,7 +34,7 @@ use anyhow::{Context, Result};
 use solana_rpc_client_api::config::RpcSendTransactionConfig;
 use solana_sdk::{
     commitment_config::CommitmentConfig, compute_budget::ComputeBudgetInstruction,
-    instruction::Instruction, pubkey::Pubkey, signature::Signature, signer::Signer,
+    instruction::Instruction, pubkey::Pubkey, signature::Signature, transaction::Transaction,
 };
 use tokio::time::{sleep, Duration};
 
@@ -122,17 +122,15 @@ impl DarklakeSDK {
     /// * `token_owner` - Optional token owner keypair. If not provided, uses the payer as token owner
     ///
     /// # Returns
-    /// Returns the transaction signature of the executed swap
-    pub async fn swap(
+    /// Returns the tx signature of the executed swap
+    pub async fn swap_tx(
         &mut self,
         token_in: Pubkey,
         token_out: Pubkey,
         amount_in: u64,
         min_amount_out: u64,
-        token_owner: Option<Keypair>,
-    ) -> Result<(Signature, Signature)> {
-        let rpc_client = self.client.program(DARKLAKE_PROGRAM_ID)?.rpc();
-
+        token_owner: Pubkey,
+    ) -> Result<(Transaction, Pubkey, u64, [u8; 8])> {
         let is_from_sol = token_in == SOL_MINT;
         let is_to_sol = token_out == SOL_MINT;
 
@@ -158,16 +156,10 @@ impl DarklakeSDK {
 
         let salt = generate_random_salt();
 
-        let payer_pubkey: Pubkey = self.client.program(DARKLAKE_PROGRAM_ID).unwrap().payer();
-        let token_owner_pubkey = match &token_owner {
-            Some(token_owner) => token_owner.pubkey(),
-            None => payer_pubkey,
-        };
-
         let swap_params = SwapParams {
             source_mint: token_in,
             destination_mint: token_out,
-            token_transfer_authority: token_owner_pubkey,
+            token_transfer_authority: token_owner,
             in_amount: amount_in, // 1 token (assuming 6 decimals)
             swap_mode: SwapMode::ExactIn,
             min_out: min_amount_out, // 0.95 tokens out (5% slippage tolerance)
@@ -195,7 +187,7 @@ impl DarklakeSDK {
         request_builder = request_builder.instruction(compute_budget_ix);
 
         if is_from_sol {
-            let sol_to_wsol_instructions = get_wrap_sol_to_wsol_instructions(token_owner_pubkey, amount_in)?;
+            let sol_to_wsol_instructions = get_wrap_sol_to_wsol_instructions(token_owner, amount_in)?;
             request_builder = request_builder.instruction(sol_to_wsol_instructions[0].clone());
             request_builder = request_builder.instruction(sol_to_wsol_instructions[1].clone());
             request_builder = request_builder.instruction(sol_to_wsol_instructions[2].clone());
@@ -203,22 +195,26 @@ impl DarklakeSDK {
 
         request_builder = request_builder.instruction(swap_instruction);
 
-        let swap_signature = if let Some(token_owner) = token_owner {
-            request_builder
-                .signer(token_owner)
-                .send_with_spinner_and_config(self.transaction_config)
-                .await?
-        } else {
-            request_builder
-                .send_with_spinner_and_config(self.transaction_config)
-                .await?
-        };
+        let swap_transaction = request_builder
+            .transaction()?;
 
         let order_key = self
             .darklake_amm
             .as_ref()
             .unwrap()
             .get_order_pubkey(self.client.program(DARKLAKE_PROGRAM_ID).unwrap().payer())?;
+      
+        Ok((swap_transaction, order_key, min_amount_out, salt))
+    }
+
+    pub async fn finalize_tx(
+        &mut self,
+        order_key: Pubkey,
+        unwrap_wsol: bool,
+        min_out: u64,
+        salt: [u8; 8],
+    ) -> Result<Transaction> {
+        let rpc_client = self.client.program(DARKLAKE_PROGRAM_ID)?.rpc();
 
         // Retry getting order data 5 times every 5 seconds
         let mut order_data = None;
@@ -259,13 +255,13 @@ impl DarklakeSDK {
         self.update_accounts().await?;
 
         let finalize_params = FinalizeParams {
-            settle_signer: payer_pubkey,  // Always payer
-            order_owner: token_owner_pubkey, // Use token_owner (or payer as fallback)
-            unwrap_wsol: is_to_sol,           // Set to true if output is wrapped SOL
-            min_out: swap_params.min_out, // Same min_out as swap
-            salt: swap_params.salt,       // Same salt as swap
+            settle_signer: self.client.program(DARKLAKE_PROGRAM_ID).unwrap().payer(),  // Always payer
+            order_owner: order.trader, // Use token_owner (or payer as fallback)
+            unwrap_wsol,           // Set to true if output is wrapped SOL
+            min_out, // Same min_out as swap
+            salt,       // Same salt as swap
             output: order.d_out,          // Will be populated by the SDK
-            commitment: swap_and_account_metas.swap.c_min, // Will be populated by the SDK
+            commitment: order.c_min, // Will be populated by the SDK
             deadline: order.deadline,
             current_slot: rpc_client
                 .get_slot_with_commitment(CommitmentConfig::processed())
@@ -284,26 +280,17 @@ impl DarklakeSDK {
             data: finalize_and_account_metas.data(),
         };
 
-        let settle_transaction_config: RpcSendTransactionConfig = RpcSendTransactionConfig {
-            skip_preflight: false,
-            preflight_commitment: Some(CommitmentConfig::processed().commitment),
-            encoding: None,
-            max_retries: None,
-            min_context_slot: None,
-        };
-
         let compute_budget_ix = ComputeBudgetInstruction::set_compute_unit_limit(500_000);
 
         let program = self.client.program(DARKLAKE_PROGRAM_ID)?;
         let request_builder = program.request();
 
-        let finalize_signature = request_builder
+        let finalize_transaction = request_builder
             .instruction(compute_budget_ix)
             .instruction(finalize_instruction)
-            .send_with_spinner_and_config(settle_transaction_config)
-            .await?;
+            .transaction()?;
 
-        Ok((swap_signature, finalize_signature))
+        Ok(finalize_transaction)
     }
 
     pub async fn add_liquidity(
