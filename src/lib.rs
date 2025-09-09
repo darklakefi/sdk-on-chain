@@ -484,7 +484,8 @@ impl DarklakeSDK {
         let (pool_key, _, _) = Self::get_pool_address(token_x, token_y);
 
         let rpc_client = self.client.program(DARKLAKE_PROGRAM_ID)?.rpc();
-        let pool_account_data = rpc_client.get_account(&pool_key).await?;
+        let pool_account_data = rpc_client.get_account(&pool_key).await
+            .map_err(|_| anyhow::anyhow!("Pool not found"))?;
 
         let pool_key_and_account = KeyedAccount {
             key: pool_key,
