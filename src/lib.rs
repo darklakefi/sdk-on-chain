@@ -280,7 +280,7 @@ impl DarklakeSDK {
         let finalize_transaction = Transaction::new_unsigned(
             Message::new(
                 &instructions,
-                Some(&order.trader),
+                Some(&settler),
             )
         );
 
