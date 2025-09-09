@@ -47,10 +47,9 @@ pub struct DarklakeSDK {
 
 impl DarklakeSDK {
     /// Create a new Darklake SDK instance
-    pub fn new(rpc_endpoint: &str, payer: Keypair) -> Self {
+    pub fn new(rpc_endpoint: &str) -> Self {
         let cluster = Cluster::from_str(rpc_endpoint).unwrap();
         let commitment_config = CommitmentConfig::finalized();
-        let rc = Rc::new(payer);
 
         let transaction_config: RpcSendTransactionConfig = RpcSendTransactionConfig {
             skip_preflight: false,
@@ -60,8 +59,10 @@ impl DarklakeSDK {
             min_context_slot: None,
         };
 
+        let dummy_keypair = Keypair::new();
+        let rc = Rc::new(dummy_keypair);
         Self {
-            client: Client::new_with_options(cluster, rc.clone(), commitment_config),
+            client: Client::new_with_options(cluster, rc, commitment_config),
             darklake_amm: None,
             transaction_config,
         }
@@ -119,7 +120,7 @@ impl DarklakeSDK {
     /// * `token_out` - The output token mint
     /// * `amount_in` - The amount of input tokens
     /// * `min_amount_out` - The minimum amount of output tokens expected
-    /// * `token_owner` - Optional token owner keypair. If not provided, uses the payer as token owner
+    /// * `token_owner` - The token owner public key
     ///
     /// # Returns
     /// Returns the tx signature of the executed swap
@@ -202,7 +203,7 @@ impl DarklakeSDK {
             .darklake_amm
             .as_ref()
             .unwrap()
-            .get_order_pubkey(self.client.program(DARKLAKE_PROGRAM_ID).unwrap().payer())?;
+            .get_order_pubkey(token_owner)?;
       
         Ok((swap_transaction, order_key, min_amount_out, salt))
     }
@@ -213,6 +214,7 @@ impl DarklakeSDK {
         unwrap_wsol: bool,
         min_out: u64,
         salt: [u8; 8],
+        settle_signer: Option<Pubkey>,
     ) -> Result<Transaction> {
         let rpc_client = self.client.program(DARKLAKE_PROGRAM_ID)?.rpc();
 
@@ -255,8 +257,8 @@ impl DarklakeSDK {
         self.update_accounts().await?;
 
         let finalize_params = FinalizeParams {
-            settle_signer: self.client.program(DARKLAKE_PROGRAM_ID).unwrap().payer(),  // Always payer
-            order_owner: order.trader, // Use token_owner (or payer as fallback)
+            settle_signer: settle_signer.unwrap_or(order.trader),  // who settles the order
+            order_owner: order.trader, // who owns the order
             unwrap_wsol,           // Set to true if output is wrapped SOL
             min_out, // Same min_out as swap
             salt,       // Same salt as swap
@@ -300,6 +302,7 @@ impl DarklakeSDK {
         max_amount_x: u64,
         max_amount_y: u64,
         amount_lp: u64,
+        user: Pubkey,
     ) -> Result<Signature> {
         let is_x_sol = token_x == SOL_MINT;
         let is_y_sol = token_y == SOL_MINT;
@@ -336,13 +339,11 @@ impl DarklakeSDK {
         // update accounts
         self.update_accounts().await?;
 
-        let payer_pubkey: Pubkey = self.client.program(DARKLAKE_PROGRAM_ID).unwrap().payer();
-
         let add_liquidity_params = AddLiquidityParams {
             amount_lp,
             max_amount_x,
             max_amount_y,
-            user: payer_pubkey,
+            user,
         };
 
         let add_liquidity_and_account_metas = self
@@ -361,12 +362,12 @@ impl DarklakeSDK {
         let mut request_builder = program.request();
 
         if is_x_sol {
-            let sol_to_wsol_instructions = get_wrap_sol_to_wsol_instructions(payer_pubkey, max_amount_x)?;
+            let sol_to_wsol_instructions = get_wrap_sol_to_wsol_instructions(user, max_amount_x)?;
             request_builder = request_builder.instruction(sol_to_wsol_instructions[0].clone());
             request_builder = request_builder.instruction(sol_to_wsol_instructions[1].clone());
             request_builder = request_builder.instruction(sol_to_wsol_instructions[2].clone());
         } else if is_y_sol {
-            let sol_to_wsol_instructions = get_wrap_sol_to_wsol_instructions(payer_pubkey, max_amount_y)?;
+            let sol_to_wsol_instructions = get_wrap_sol_to_wsol_instructions(user, max_amount_y)?;
             request_builder = request_builder.instruction(sol_to_wsol_instructions[0].clone());
             request_builder = request_builder.instruction(sol_to_wsol_instructions[1].clone());
             request_builder = request_builder.instruction(sol_to_wsol_instructions[2].clone());
@@ -387,6 +388,7 @@ impl DarklakeSDK {
         min_amount_x: u64,
         min_amount_y: u64,
         amount_lp: u64,
+        user: Pubkey,
     ) -> Result<Signature> {
         let is_x_sol = token_x == SOL_MINT;
         let is_y_sol = token_y == SOL_MINT;
@@ -422,13 +424,12 @@ impl DarklakeSDK {
         // update accounts
         self.update_accounts().await?;
 
-        let payer_pubkey: Pubkey = self.client.program(DARKLAKE_PROGRAM_ID).unwrap().payer();
 
         let remove_liquidity_params = RemoveLiquidityParams {
             amount_lp,
             min_amount_x,
             min_amount_y,
-            user: payer_pubkey,
+            user,
         };
 
         let remove_liquidity_and_account_metas = self
@@ -448,7 +449,7 @@ impl DarklakeSDK {
 
         // Add close WSOL instructions if either token is SOL (user can't have multiple WSOL accounts)
         if is_x_sol || is_y_sol {
-            let close_wsol_instructions = get_close_wsol_instructions(payer_pubkey)?;
+            let close_wsol_instructions = get_close_wsol_instructions(user)?;
             request_builder = request_builder.instruction(close_wsol_instructions[0].clone());
             request_builder = request_builder.instruction(close_wsol_instructions[1].clone());
         }
@@ -586,12 +587,6 @@ impl DarklakeSDK {
             accounts: remove_liquidity_and_account_metas.account_metas,
             data: remove_liquidity_and_account_metas.data,
         })
-    }
-
-    /// Getters
-    /// Get the signer's public key
-    pub fn signer_pubkey(&self) -> Pubkey {
-        self.client.program(DARKLAKE_PROGRAM_ID).unwrap().payer()
     }
 
     /// Helpers internal methods
