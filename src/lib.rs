@@ -518,7 +518,12 @@ impl DarklakeSDK {
     pub async fn get_order(&mut self, user: Pubkey) -> Result<Order> {
         let order_key = self.darklake_amm.as_ref().unwrap().get_order_pubkey(user)?;
 
-        let order_data = self.rpc_client.get_account(&order_key).await?;
+        let order_data = self.rpc_client.get_account_with_commitment(&order_key, CommitmentConfig::processed()).await?.value;
+        if order_data.is_none() {
+            return Err(anyhow::anyhow!("Order not found"));
+        }
+
+        let order_data = order_data.unwrap();
 
         let order = self
             .darklake_amm
