@@ -23,6 +23,7 @@ pub use account_metas::*;
 pub use amm::*;
 use anchor_client::{solana_sdk::signer::keypair::Keypair, Client, Cluster};
 pub use darklake_amm::{DarklakeAmm};
+use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 use spl_token::native_mint;
 
 use crate::{
@@ -33,24 +34,22 @@ use crate::{
 use anyhow::{Context, Result};
 use solana_rpc_client_api::config::RpcSendTransactionConfig;
 use solana_sdk::{
-    commitment_config::CommitmentConfig, compute_budget::ComputeBudgetInstruction,
-    instruction::Instruction, pubkey::Pubkey, signature::Signature, signer::Signer,
+    commitment_config::CommitmentConfig, compute_budget::ComputeBudgetInstruction, instruction::Instruction, message::Message, pubkey::Pubkey, signature::Signature, transaction::Transaction
 };
 use tokio::time::{sleep, Duration};
 
 /// Stateful Darklake SDK that holds RPC client and signer
 pub struct DarklakeSDK {
-    client: Client<Rc<Keypair>>,
+    rpc_client: RpcClient,
     darklake_amm: Option<DarklakeAmm>,
     transaction_config: RpcSendTransactionConfig,
 }
 
 impl DarklakeSDK {
     /// Create a new Darklake SDK instance
-    pub fn new(rpc_endpoint: &str, payer: Keypair) -> Self {
-        let cluster = Cluster::from_str(rpc_endpoint).unwrap();
+    pub fn new(rpc_endpoint: &str) -> Self {
+        // let cluster = Cluster::from_str(rpc_endpoint).unwrap();
         let commitment_config = CommitmentConfig::finalized();
-        let rc = Rc::new(payer);
 
         let transaction_config: RpcSendTransactionConfig = RpcSendTransactionConfig {
             skip_preflight: false,
@@ -60,8 +59,10 @@ impl DarklakeSDK {
             min_context_slot: None,
         };
 
+        // let dummy_keypair = Keypair::new();
+        // let rc = Rc::new(dummy_keypair);
         Self {
-            client: Client::new_with_options(cluster, rc.clone(), commitment_config),
+            rpc_client: RpcClient::new_with_commitment(rpc_endpoint.to_string(), commitment_config),
             darklake_amm: None,
             transaction_config,
         }
@@ -82,8 +83,6 @@ impl DarklakeSDK {
         token_out: Pubkey,
         amount_in: u64,
     ) -> Result<Quote> {
-        let rpc_client = self.client.program(DARKLAKE_PROGRAM_ID)?.rpc();
-
         let is_from_sol = token_in == SOL_MINT;
         let is_to_sol = token_out == SOL_MINT;
 
@@ -98,26 +97,14 @@ impl DarklakeSDK {
             token_out
         };
 
-        let (pool_key, _token_x, _token_y) = Self::get_pool_address(token_in, token_out);
+        let (pool_key, _token_x, _token_y) = Self::get_pool_address(_token_in, _token_out);
 
         if self.darklake_amm.is_none() || self.darklake_amm.as_ref().unwrap().key() != pool_key {
             self.load_pool(_token_x, _token_y).await?;
         }
 
         // update accounts
-        let accounts_to_update = self.darklake_amm.as_ref().unwrap().get_accounts_to_update();
-        let mut account_map = HashMap::new();
-        for account_key in accounts_to_update {
-            let account = rpc_client.get_account(&account_key).await?;
-            account_map.insert(
-                account_key,
-                AccountData {
-                    data: account.data,
-                    owner: account.owner,
-                },
-            );
-        }
-        self.darklake_amm.as_mut().unwrap().update(&account_map)?;
+        self.update_accounts().await?;
 
         self.darklake_amm.as_ref().unwrap().quote(&QuoteParams {
             input_mint: token_in,
@@ -133,20 +120,18 @@ impl DarklakeSDK {
     /// * `token_out` - The output token mint
     /// * `amount_in` - The amount of input tokens
     /// * `min_amount_out` - The minimum amount of output tokens expected
-    /// * `token_owner` - Optional token owner keypair. If not provided, uses the payer as token owner
+    /// * `token_owner` - The token owner public key
     ///
     /// # Returns
-    /// Returns the transaction signature of the executed swap
-    pub async fn swap(
+    /// Returns the tx signature of the executed swap
+    pub async fn swap_tx(
         &mut self,
         token_in: Pubkey,
         token_out: Pubkey,
         amount_in: u64,
         min_amount_out: u64,
-        token_owner: Option<Keypair>,
-    ) -> Result<(Signature, Signature)> {
-        let rpc_client = self.client.program(DARKLAKE_PROGRAM_ID)?.rpc();
-
+        token_owner: Pubkey,
+    ) -> Result<(Transaction, Pubkey, u64, [u8; 8])> {
         let is_from_sol = token_in == SOL_MINT;
         let is_to_sol = token_out == SOL_MINT;
 
@@ -172,72 +157,64 @@ impl DarklakeSDK {
 
         let salt = generate_random_salt();
 
-        let payer_pubkey: Pubkey = self.client.program(DARKLAKE_PROGRAM_ID).unwrap().payer();
-        let token_owner_pubkey = match &token_owner {
-            Some(token_owner) => token_owner.pubkey(),
-            None => payer_pubkey,
-        };
-
         let swap_params = SwapParams {
             source_mint: token_in,
             destination_mint: token_out,
-            token_transfer_authority: token_owner_pubkey,
+            token_transfer_authority: token_owner,
             in_amount: amount_in, // 1 token (assuming 6 decimals)
             swap_mode: SwapMode::ExactIn,
             min_out: min_amount_out, // 0.95 tokens out (5% slippage tolerance)
             salt,                    // Random salt for order uniqueness
         };
 
-        let swap_and_account_metas = self
-            .darklake_amm
-            .as_ref()
-            .unwrap()
-            .get_swap_and_account_metas(&swap_params)
-            .context("Failed to get swap instruction and account metadata")?;
-
-        let swap_instruction = Instruction {
-            program_id: DARKLAKE_PROGRAM_ID,
-            accounts: swap_and_account_metas.account_metas,
-            data: swap_and_account_metas.data,
-        };
+        let swap_instruction = self.swap_ix(swap_params).await?;
 
         let compute_budget_ix = ComputeBudgetInstruction::set_compute_unit_limit(300_000);
 
-        let program = self.client.program(DARKLAKE_PROGRAM_ID)?;
-
-        let mut request_builder = program.request();
-        request_builder = request_builder.instruction(compute_budget_ix);
+        let mut instructions = vec![compute_budget_ix];
 
         if is_from_sol {
-            let sol_to_wsol_instructions = get_wrap_sol_to_wsol_instructions(token_owner_pubkey, amount_in)?;
-            request_builder = request_builder.instruction(sol_to_wsol_instructions[0].clone());
-            request_builder = request_builder.instruction(sol_to_wsol_instructions[1].clone());
-            request_builder = request_builder.instruction(sol_to_wsol_instructions[2].clone());
+            let sol_to_wsol_instructions = get_wrap_sol_to_wsol_instructions(token_owner, amount_in)?;
+            instructions.push(sol_to_wsol_instructions[0].clone());
+            instructions.push(sol_to_wsol_instructions[1].clone());
+            instructions.push(sol_to_wsol_instructions[2].clone());
         }
 
-        request_builder = request_builder.instruction(swap_instruction);
+        instructions.push(swap_instruction);
 
-        let swap_signature = if let Some(token_owner) = token_owner {
-            request_builder
-                .signer(token_owner)
-                .send_with_spinner_and_config(self.transaction_config)
-                .await?
-        } else {
-            request_builder
-                .send_with_spinner_and_config(self.transaction_config)
-                .await?
-        };
+        // let recent_blockhash = self.rpc_client.get_latest_blockhash().await?;
+
+        let message = Message::new(
+            &instructions,
+            Some(&token_owner),
+            // recent_blockhash,
+        );
+
+        let swap_transaction = Transaction::new_unsigned(
+            message
+        );
 
         let order_key = self
             .darklake_amm
             .as_ref()
             .unwrap()
-            .get_order_pubkey(self.client.program(DARKLAKE_PROGRAM_ID).unwrap().payer())?;
+            .get_order_pubkey(token_owner)?;
+      
+        Ok((swap_transaction, order_key, min_amount_out, salt))
+    }
 
+    pub async fn finalize_tx(
+        &mut self,
+        order_key: Pubkey,
+        unwrap_wsol: bool,
+        min_out: u64,
+        salt: [u8; 8],
+        settle_signer: Option<Pubkey>,
+    ) -> Result<Transaction> {
         // Retry getting order data 5 times every 5 seconds
         let mut order_data = None;
         for attempt in 1..=5 {
-            match rpc_client.get_account(&order_key).await {
+            match self.rpc_client.get_account(&order_key).await {
                 Ok(account) => {
                     order_data = Some(account);
                     break;
@@ -270,76 +247,55 @@ impl DarklakeSDK {
             .parse_order_data(&order_data.unwrap().data)?;
 
         // update accounts
-        let accounts_to_update = self.darklake_amm.as_ref().unwrap().get_accounts_to_update();
-        let mut account_map = HashMap::new();
-        for account_key in accounts_to_update {
-            let account = rpc_client.get_account(&account_key).await?;
-            account_map.insert(
-                account_key,
-                AccountData {
-                    data: account.data,
-                    owner: account.owner,
-                },
-            );
-        }
-        self.darklake_amm.as_mut().unwrap().update(&account_map)?;
+        self.update_accounts().await?;
+
+        let settler = settle_signer.unwrap_or(order.trader);
+        let create_wsol_ata_ix = spl_associated_token_account::instruction::create_associated_token_account_idempotent(
+            &settler,
+            &settler,
+            &native_mint::ID,
+            &spl_token::ID,
+        );
 
         let finalize_params = FinalizeParams {
-            settle_signer: payer_pubkey,  // Always payer
-            order_owner: token_owner_pubkey, // Use token_owner (or payer as fallback)
-            unwrap_wsol: is_to_sol,           // Set to true if output is wrapped SOL
-            min_out: swap_params.min_out, // Same min_out as swap
-            salt: swap_params.salt,       // Same salt as swap
+            settle_signer: settler,  // who settles the order
+            order_owner: order.trader, // who owns the order
+            unwrap_wsol,           // Set to true if output is wrapped SOL
+            min_out, // Same min_out as swap
+            salt,       // Same salt as swap
             output: order.d_out,          // Will be populated by the SDK
-            commitment: swap_and_account_metas.swap.c_min, // Will be populated by the SDK
+            commitment: order.c_min, // Will be populated by the SDK
             deadline: order.deadline,
-            current_slot: rpc_client
+            current_slot: self.rpc_client
                 .get_slot_with_commitment(CommitmentConfig::processed())
                 .await?,
         };
 
-        let finalize_and_account_metas = self
-            .darklake_amm
-            .as_ref()
-            .unwrap()
-            .get_finalize_and_account_metas(&finalize_params)?;
-
-        let finalize_instruction = Instruction {
-            program_id: DARKLAKE_PROGRAM_ID,
-            accounts: finalize_and_account_metas.account_metas(),
-            data: finalize_and_account_metas.data(),
-        };
-
-        let settle_transaction_config: RpcSendTransactionConfig = RpcSendTransactionConfig {
-            skip_preflight: false,
-            preflight_commitment: Some(CommitmentConfig::processed().commitment),
-            encoding: None,
-            max_retries: None,
-            min_context_slot: None,
-        };
+        let finalize_instruction = self.finalize_ix(finalize_params).await?;
 
         let compute_budget_ix = ComputeBudgetInstruction::set_compute_unit_limit(500_000);
 
-        let program = self.client.program(DARKLAKE_PROGRAM_ID)?;
-        let request_builder = program.request();
+        let instructions = vec![compute_budget_ix, create_wsol_ata_ix, finalize_instruction];
 
-        let finalize_signature = request_builder
-            .instruction(compute_budget_ix)
-            .instruction(finalize_instruction)
-            .send_with_spinner_and_config(settle_transaction_config)
-            .await?;
+        let finalize_transaction = Transaction::new_unsigned(
+            Message::new(
+                &instructions,
+                Some(&order.trader),
+            )
+        );
 
-        Ok((swap_signature, finalize_signature))
+        Ok(finalize_transaction)
     }
 
-    pub async fn add_liquidity(
+    pub async fn add_liquidity_tx(
         &mut self,
         token_x: Pubkey,
         token_y: Pubkey,
         max_amount_x: u64,
         max_amount_y: u64,
         amount_lp: u64,
-    ) -> Result<Signature> {
+        user: Pubkey,
+    ) -> Result<Transaction> {
         let is_x_sol = token_x == SOL_MINT;
         let is_y_sol = token_y == SOL_MINT;
 
@@ -375,58 +331,49 @@ impl DarklakeSDK {
         // update accounts
         self.update_accounts().await?;
 
-        let payer_pubkey: Pubkey = self.client.program(DARKLAKE_PROGRAM_ID).unwrap().payer();
-
         let add_liquidity_params = AddLiquidityParams {
             amount_lp,
             max_amount_x,
             max_amount_y,
-            user: payer_pubkey,
+            user,
         };
 
-        let add_liquidity_and_account_metas = self
-            .darklake_amm
-            .as_ref()
-            .unwrap()
-            .get_add_liquidity_and_account_metas(&add_liquidity_params)?;
+        let add_liquidity_instruction = self.add_liquidity_ix(add_liquidity_params).await?;
 
-        let add_liquidity_instruction = Instruction {
-            program_id: DARKLAKE_PROGRAM_ID,
-            accounts: add_liquidity_and_account_metas.account_metas,
-            data: add_liquidity_and_account_metas.data,
-        };
-
-        let program = self.client.program(DARKLAKE_PROGRAM_ID)?;
-        let mut request_builder = program.request();
-
+        let mut instructions = vec![];
         if is_x_sol {
-            let sol_to_wsol_instructions = get_wrap_sol_to_wsol_instructions(payer_pubkey, max_amount_x)?;
-            request_builder = request_builder.instruction(sol_to_wsol_instructions[0].clone());
-            request_builder = request_builder.instruction(sol_to_wsol_instructions[1].clone());
-            request_builder = request_builder.instruction(sol_to_wsol_instructions[2].clone());
+            let sol_to_wsol_instructions = get_wrap_sol_to_wsol_instructions(user, max_amount_x)?;
+            instructions.push(sol_to_wsol_instructions[0].clone());
+            instructions.push(sol_to_wsol_instructions[1].clone());
+            instructions.push(sol_to_wsol_instructions[2].clone());
         } else if is_y_sol {
-            let sol_to_wsol_instructions = get_wrap_sol_to_wsol_instructions(payer_pubkey, max_amount_y)?;
-            request_builder = request_builder.instruction(sol_to_wsol_instructions[0].clone());
-            request_builder = request_builder.instruction(sol_to_wsol_instructions[1].clone());
-            request_builder = request_builder.instruction(sol_to_wsol_instructions[2].clone());
+            let sol_to_wsol_instructions = get_wrap_sol_to_wsol_instructions(user, max_amount_y)?;
+            instructions.push(sol_to_wsol_instructions[0].clone());
+            instructions.push(sol_to_wsol_instructions[1].clone());
+            instructions.push(sol_to_wsol_instructions[2].clone());
         }
 
-        let add_liquidity_signature = request_builder
-            .instruction(add_liquidity_instruction)
-            .send_with_spinner_and_config(self.transaction_config)
-            .await?;
+        instructions.push(add_liquidity_instruction);
 
-        Ok(add_liquidity_signature)
+        let add_liquidity_transaction = Transaction::new_unsigned(
+            Message::new(
+                &instructions,
+                Some(&user),
+            )
+        );
+
+        Ok(add_liquidity_transaction)
     }
 
-    pub async fn remove_liquidity(
+    pub async fn remove_liquidity_tx(
         &mut self,
         token_x: Pubkey,
         token_y: Pubkey,
         min_amount_x: u64,
         min_amount_y: u64,
         amount_lp: u64,
-    ) -> Result<Signature> {
+        user: Pubkey,
+    ) -> Result<Transaction> {
         let is_x_sol = token_x == SOL_MINT;
         let is_y_sol = token_y == SOL_MINT;
 
@@ -461,43 +408,50 @@ impl DarklakeSDK {
         // update accounts
         self.update_accounts().await?;
 
-        let payer_pubkey: Pubkey = self.client.program(DARKLAKE_PROGRAM_ID).unwrap().payer();
+        let (token_x_owner, token_y_owner) = self.darklake_amm.as_ref().unwrap().get_token_owners();
+
+
+        // make sure the user has the token accounts
+        let create_token_x_ata_ix = spl_associated_token_account::instruction::create_associated_token_account_idempotent(
+            &user,
+            &user,
+            &_token_x,
+            &token_x_owner,
+        );
+
+        let create_token_y_ata_ix = spl_associated_token_account::instruction::create_associated_token_account_idempotent(
+            &user,
+            &user,
+            &_token_y,
+            &token_y_owner,
+        );
 
         let remove_liquidity_params = RemoveLiquidityParams {
             amount_lp,
             min_amount_x,
             min_amount_y,
-            user: payer_pubkey,
+            user,
         };
 
-        let remove_liquidity_and_account_metas = self
-            .darklake_amm
-            .as_ref()
-            .unwrap()
-            .get_remove_liquidity_and_account_metas(&remove_liquidity_params)?;
+        let remove_liquidity_instruction = self.remove_liquidity_ix(remove_liquidity_params).await?;
 
-        let remove_liquidity_instruction = Instruction {
-            program_id: DARKLAKE_PROGRAM_ID,
-            accounts: remove_liquidity_and_account_metas.account_metas,
-            data: remove_liquidity_and_account_metas.data,
-        };
-
-        let program = self.client.program(DARKLAKE_PROGRAM_ID)?;
-        let mut request_builder = program.request();
+        let mut instructions = vec![create_token_x_ata_ix, create_token_y_ata_ix, remove_liquidity_instruction];
 
         // Add close WSOL instructions if either token is SOL (user can't have multiple WSOL accounts)
         if is_x_sol || is_y_sol {
-            let close_wsol_instructions = get_close_wsol_instructions(payer_pubkey)?;
-            request_builder = request_builder.instruction(close_wsol_instructions[0].clone());
-            request_builder = request_builder.instruction(close_wsol_instructions[1].clone());
+            let close_wsol_instructions = get_close_wsol_instructions(user)?;
+            instructions.push(close_wsol_instructions[0].clone());
+            instructions.push(close_wsol_instructions[1].clone());
         }
 
-        let remove_liquidity_signature = request_builder
-            .instruction(remove_liquidity_instruction)
-            .send_with_spinner_and_config(self.transaction_config)
-            .await?;
+        let remove_liquidity_transaction = Transaction::new_unsigned(
+            Message::new(
+                &instructions,
+                Some(&user),
+            )
+        );
 
-        Ok(remove_liquidity_signature)
+        Ok(remove_liquidity_transaction)
     }
 
     // MANUAL HANDLING (these are prone to changes in the future)
@@ -509,8 +463,8 @@ impl DarklakeSDK {
     pub async fn load_pool(&mut self, token_x: Pubkey, token_y: Pubkey) -> Result<(Pubkey, Pubkey, Pubkey)> {
         let (pool_key, _, _) = Self::get_pool_address(token_x, token_y);
 
-        let rpc_client = self.client.program(DARKLAKE_PROGRAM_ID)?.rpc();
-        let pool_account_data = rpc_client.get_account(&pool_key).await?;
+        let pool_account_data = self.rpc_client.get_account(&pool_key).await
+            .map_err(|_| anyhow::anyhow!("Pool not found"))?;
 
         let pool_key_and_account = KeyedAccount {
             key: pool_key,
@@ -527,12 +481,11 @@ impl DarklakeSDK {
     }
 
     pub async fn update_accounts(&mut self) -> Result<()> {
-        let rpc_client = self.client.program(DARKLAKE_PROGRAM_ID)?.rpc();
 
         let accounts_to_update = self.darklake_amm.as_ref().unwrap().get_accounts_to_update();
         let mut account_map = HashMap::new();
         for account_key in accounts_to_update {
-            let account = rpc_client.get_account(&account_key).await?;
+            let account = self.rpc_client.get_account(&account_key).await?;
             account_map.insert(
                 account_key,
                 AccountData {
@@ -563,11 +516,14 @@ impl DarklakeSDK {
 
     // does not require load_pool or update_accounts is a standalone function after new() is called
     pub async fn get_order(&mut self, user: Pubkey) -> Result<Order> {
-        let rpc_client = self.client.program(DARKLAKE_PROGRAM_ID)?.rpc();
-
         let order_key = self.darklake_amm.as_ref().unwrap().get_order_pubkey(user)?;
 
-        let order_data = rpc_client.get_account(&order_key).await?;
+        let order_data = self.rpc_client.get_account_with_commitment(&order_key, CommitmentConfig::processed()).await?.value;
+        if order_data.is_none() {
+            return Err(anyhow::anyhow!("Order not found"));
+        }
+
+        let order_data = order_data.unwrap();
 
         let order = self
             .darklake_amm
@@ -624,12 +580,6 @@ impl DarklakeSDK {
             accounts: remove_liquidity_and_account_metas.account_metas,
             data: remove_liquidity_and_account_metas.data,
         })
-    }
-
-    /// Getters
-    /// Get the signer's public key
-    pub fn signer_pubkey(&self) -> Pubkey {
-        self.client.program(DARKLAKE_PROGRAM_ID).unwrap().payer()
     }
 
     /// Helpers internal methods

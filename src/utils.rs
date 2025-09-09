@@ -1,5 +1,5 @@
 use anchor_lang::{solana_program::example_mocks::solana_sdk::system_instruction, Result};
-use anchor_spl::token::spl_token::instruction::{close_account, sync_native, transfer};
+use anchor_spl::token::spl_token::instruction::{close_account, sync_native};
 use password_hash::rand_core::{OsRng, RngCore};
 use solana_sdk::{clock::Clock, instruction::Instruction, pubkey::Pubkey, sysvar::Sysvar};
 use spl_associated_token_account::get_associated_token_address;

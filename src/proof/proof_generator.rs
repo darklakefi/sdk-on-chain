@@ -55,7 +55,6 @@ pub fn find_circuit_path(filename: &str) -> String {
         env!("CARGO_MANIFEST_DIR"),
         filename
     );
-    println!("Generated path for {}: {}", filename, circuits_path);
     circuits_path
 }
 
@@ -80,7 +79,6 @@ pub fn generate_proof(
     let zkey_path = find_circuit_path(&format!("{}_final.zkey", file_prefix));
     let r1cs_path = find_circuit_path(&format!("{}.r1cs", file_prefix));
 
-    println!("wasm_path: {}", wasm_path);
     // Check if files exist
     if !Path::new(&wasm_path).exists() {
         return Err(anyhow::anyhow!("WASM file not found: {}", wasm_path));
@@ -92,12 +90,9 @@ pub fn generate_proof(
         return Err(anyhow::anyhow!("R1CS file not found: {}", r1cs_path));
     }
 
-    println!("directory logic passed");
-
     // // Create Circom configuration
     let cfg = CircomConfig::<Fr>::new(&wasm_path, &r1cs_path).unwrap();
 
-    println!("Config created");
     // // Build the circuit
     let mut builder = CircomBuilder::new(cfg);
 
