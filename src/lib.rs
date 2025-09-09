@@ -16,12 +16,11 @@ pub mod darklake_amm;
 pub mod proof;
 pub mod utils;
 
-use std::{collections::HashMap, rc::Rc, str::FromStr};
+use std::collections::HashMap;
 
 // Re-export main types for easy access
 pub use account_metas::*;
 pub use amm::*;
-use anchor_client::{solana_sdk::signer::keypair::Keypair, Client, Cluster};
 pub use darklake_amm::DarklakeAmm;
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 use spl_token::native_mint;
@@ -32,11 +31,9 @@ use crate::{
     utils::{generate_random_salt, get_close_wsol_instructions, get_wrap_sol_to_wsol_instructions},
 };
 use anyhow::{Context, Result};
-use solana_rpc_client_api::config::RpcSendTransactionConfig;
 use solana_sdk::{
     commitment_config::CommitmentConfig, compute_budget::ComputeBudgetInstruction,
-    instruction::Instruction, message::Message, pubkey::Pubkey, signature::Signature,
-    transaction::Transaction,
+    instruction::Instruction, message::Message, pubkey::Pubkey, transaction::Transaction,
 };
 use tokio::time::{sleep, Duration};
 
@@ -44,29 +41,16 @@ use tokio::time::{sleep, Duration};
 pub struct DarklakeSDK {
     rpc_client: RpcClient,
     darklake_amm: Option<DarklakeAmm>,
-    transaction_config: RpcSendTransactionConfig,
 }
 
 impl DarklakeSDK {
     /// Create a new Darklake SDK instance
     pub fn new(rpc_endpoint: &str) -> Self {
-        // let cluster = Cluster::from_str(rpc_endpoint).unwrap();
         let commitment_config = CommitmentConfig::finalized();
 
-        let transaction_config: RpcSendTransactionConfig = RpcSendTransactionConfig {
-            skip_preflight: false,
-            preflight_commitment: Some(commitment_config.commitment),
-            encoding: None,
-            max_retries: None,
-            min_context_slot: None,
-        };
-
-        // let dummy_keypair = Keypair::new();
-        // let rc = Rc::new(dummy_keypair);
         Self {
             rpc_client: RpcClient::new_with_commitment(rpc_endpoint.to_string(), commitment_config),
             darklake_amm: None,
-            transaction_config,
         }
     }
 
