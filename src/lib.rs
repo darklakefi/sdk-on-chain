@@ -340,8 +340,6 @@ impl DarklakeSDK {
         max_amount_y: u64,
         amount_lp: u64,
     ) -> Result<Signature> {
-        let rpc_client = self.client.program(DARKLAKE_PROGRAM_ID)?.rpc();
-
         let is_x_sol = token_x == SOL_MINT;
         let is_y_sol = token_y == SOL_MINT;
 
@@ -429,8 +427,6 @@ impl DarklakeSDK {
         min_amount_y: u64,
         amount_lp: u64,
     ) -> Result<Signature> {
-        let rpc_client = self.client.program(DARKLAKE_PROGRAM_ID)?.rpc();
-
         let is_x_sol = token_x == SOL_MINT;
         let is_y_sol = token_y == SOL_MINT;
 
