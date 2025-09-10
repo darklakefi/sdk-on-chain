@@ -22,16 +22,17 @@ Add this to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-darklake-sdk = "0.1.3"
+darklake-sdk = "0.1.7"
 ```
 
 ### Basic Setup
 
 ```rust
 use darklake_sdk::DarklakeSDK;
+use solana_sdk::commitment_config::CommitmentLevel;
 
 // Initialize the SDK (no longer requires a keypair)
-let mut sdk = DarklakeSDK::new("https://api.devnet.solana.com");
+let mut sdk = DarklakeSDK::new("https://api.devnet.solana.com", CommitmentLevel::Confirmed);
 ```
 
 ## ⚠️ Important: SOL/WSOL Handling
@@ -173,6 +174,7 @@ These functions return core instructions, allowing you to manage additional call
 use darklake_sdk::{SwapParams, FinalizeParams, SwapMode};
 use solana_sdk::instruction::Instruction;
 use solana_sdk::signer::keypair::Keypair;
+use solana_sdk::commitment_config::CommitmentLevel;
 
 // Step 1: Load the pool (for internal state tracking)
 sdk.load_pool(token_in, token_out).await?;
@@ -204,7 +206,7 @@ let swap_tx = Transaction::new_signed_with_payer(
 let swap_signature = rpc_client.send_and_confirm_transaction(&swap_tx)?;
 
 // Step 6: Get order data (bypasses internal cache for latest state)
-let order = sdk.get_order(user_pubkey).await?;
+let order = sdk.get_order(user_pubkey, CommitmentLevel::Confirmed).await?;
 
 // Step 7: Create finalize parameters
 let finalize_params = FinalizeParams {
@@ -315,7 +317,7 @@ let signature = rpc_client.send_and_confirm_transaction(&tx)?;
 
 - **`load_pool(token_x, token_y)`** - Load pool data for internal state tracking
 - **`update_accounts()`** - Update internal state with latest chain data
-- **`get_order(user)`** - Get order data (bypasses internal cache, fetches latest state directly from chain)
+- **`get_order(user, commitment_level)`** - Get order data (bypasses internal cache, fetches latest state directly from chain)
 
 ### Parameter Types
 
