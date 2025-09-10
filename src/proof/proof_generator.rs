@@ -70,26 +70,10 @@ pub fn find_circuit_path(filename: &str) -> String {
 pub fn generate_proof(
     private_inputs: &PrivateProofInputs,
     public_inputs: &PublicProofInputs,
-    is_cancel: bool,
+    wasm_path: &str,
+    zkey_path: &str,
+    r1cs_path: &str,
 ) -> Result<(Proof<Bn254>, Vec<Fr>)> {
-    let file_prefix = if is_cancel { "cancel" } else { "settle" };
-
-    // Construct paths to WASM and zkey files using dynamic path resolution
-    let wasm_path = find_circuit_path(&format!("{}.wasm", file_prefix));
-    let zkey_path = find_circuit_path(&format!("{}_final.zkey", file_prefix));
-    let r1cs_path = find_circuit_path(&format!("{}.r1cs", file_prefix));
-
-    // Check if files exist
-    if !Path::new(&wasm_path).exists() {
-        return Err(anyhow::anyhow!("WASM file not found: {}", wasm_path));
-    }
-    if !Path::new(&zkey_path).exists() {
-        return Err(anyhow::anyhow!("ZKey file not found: {}", zkey_path));
-    }
-    if !Path::new(&r1cs_path).exists() {
-        return Err(anyhow::anyhow!("R1CS file not found: {}", r1cs_path));
-    }
-
     // // Create Circom configuration
     let cfg = CircomConfig::<Fr>::new(&wasm_path, &r1cs_path).unwrap();
 
@@ -307,8 +291,18 @@ mod tests {
             commitment,
         };
 
+        let wasm_path = find_circuit_path("settle.wasm");
+        let zkey_path = find_circuit_path("settle_final.zkey");
+        let r1cs_path = find_circuit_path("settle.r1cs");
+
         // This test will fail without actual circuit files, but it demonstrates the API
-        let result = generate_proof(&private_inputs, &public_inputs, false);
+        let result = generate_proof(
+            &private_inputs,
+            &public_inputs,
+            &wasm_path,
+            &zkey_path,
+            &r1cs_path,
+        );
 
         let zkey_path = find_circuit_path("settle_final.zkey");
 
@@ -342,8 +336,18 @@ mod tests {
             commitment,
         };
 
+        let wasm_path = find_circuit_path("cancel.wasm");
+        let zkey_path = find_circuit_path("cancel_final.zkey");
+        let r1cs_path = find_circuit_path("cancel.r1cs");
+
         // This test will fail without actual circuit files, but it demonstrates the API
-        let result = generate_proof(&private_inputs, &public_inputs, true);
+        let result = generate_proof(
+            &private_inputs,
+            &public_inputs,
+            &wasm_path,
+            &zkey_path,
+            &r1cs_path,
+        );
 
         let zkey_path = find_circuit_path("cancel_final.zkey");
 

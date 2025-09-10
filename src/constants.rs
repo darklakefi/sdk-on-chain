@@ -2,7 +2,7 @@ use anchor_client::solana_sdk::pubkey::Pubkey;
 use lazy_static::lazy_static;
 use solana_sdk::pubkey;
 
-pub const MAX_PERCENTAGE: u64 = 1_000_000; // 100% in basis points
+// pub const MAX_PERCENTAGE: u64 = 1_000_000; // 100% in basis points
 
 pub const DARKLAKE_PROGRAM_ID: Pubkey = pubkey!("darkr3FB87qAZmgLwKov6Hk9Yiah5UT4rUYu8Zhthw1");
 

@@ -1,7 +1,7 @@
 use anchor_lang::prelude::AccountMeta;
 use solana_sdk::pubkey::Pubkey;
 
-pub struct DarklakeAmmSwap {
+pub(crate) struct DarklakeAmmSwap {
     pub user: Pubkey,
     pub token_mint_x: Pubkey,
     pub token_mint_y: Pubkey,
@@ -49,7 +49,7 @@ impl From<DarklakeAmmSwap> for Vec<AccountMeta> {
     }
 }
 
-pub struct DarklakeAmmSettle {
+pub(crate) struct DarklakeAmmSettle {
     pub caller: Pubkey,
     pub order_owner: Pubkey,
     pub token_mint_x: Pubkey,
@@ -103,7 +103,7 @@ impl From<DarklakeAmmSettle> for Vec<AccountMeta> {
     }
 }
 
-pub struct DarklakeAmmCancel {
+pub(crate) struct DarklakeAmmCancel {
     pub caller: Pubkey,
     pub order_owner: Pubkey,
     pub token_mint_x: Pubkey,
@@ -155,7 +155,7 @@ impl From<DarklakeAmmCancel> for Vec<AccountMeta> {
     }
 }
 
-pub struct DarklakeAmmSlash {
+pub(crate) struct DarklakeAmmSlash {
     pub caller: Pubkey,
     pub order_owner: Pubkey,
     pub token_mint_x: Pubkey,
@@ -205,7 +205,7 @@ impl From<DarklakeAmmSlash> for Vec<AccountMeta> {
     }
 }
 
-pub struct DarklakeAmmAddLiquidity {
+pub(crate) struct DarklakeAmmAddLiquidity {
     pub user: Pubkey,
     pub token_mint_x: Pubkey,
     pub token_mint_y: Pubkey,
@@ -249,7 +249,7 @@ impl From<DarklakeAmmAddLiquidity> for Vec<AccountMeta> {
     }
 }
 
-pub struct DarklakeAmmRemoveLiquidity {
+pub(crate) struct DarklakeAmmRemoveLiquidity {
     pub user: Pubkey,
     pub token_mint_x: Pubkey,
     pub token_mint_y: Pubkey,
