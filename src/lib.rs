@@ -32,7 +32,7 @@ use crate::{
 };
 use anyhow::{Context, Result};
 use solana_sdk::{
-    commitment_config::CommitmentConfig, compute_budget::ComputeBudgetInstruction,
+    commitment_config::{CommitmentConfig, CommitmentLevel}, compute_budget::ComputeBudgetInstruction,
     instruction::Instruction, message::Message, pubkey::Pubkey, transaction::Transaction,
 };
 use tokio::time::{sleep, Duration};
@@ -45,8 +45,10 @@ pub struct DarklakeSDK {
 
 impl DarklakeSDK {
     /// Create a new Darklake SDK instance
-    pub fn new(rpc_endpoint: &str) -> Self {
-        let commitment_config = CommitmentConfig::finalized();
+    pub fn new(rpc_endpoint: &str, commitment_level: CommitmentLevel) -> Self {
+        let commitment_config = CommitmentConfig {
+            commitment: commitment_level,
+        };
 
         Self {
             rpc_client: RpcClient::new_with_commitment(rpc_endpoint.to_string(), commitment_config),
@@ -487,12 +489,14 @@ impl DarklakeSDK {
     }
 
     // does not require load_pool or update_accounts is a standalone function after new() is called
-    pub async fn get_order(&mut self, user: Pubkey) -> Result<Order> {
+    pub async fn get_order(&mut self, user: Pubkey, commitment_level: CommitmentLevel) -> Result<Order> {
         let order_key = self.darklake_amm.as_ref().unwrap().get_order_pubkey(user)?;
 
         let order_data = self
             .rpc_client
-            .get_account_with_commitment(&order_key, CommitmentConfig::processed())
+            .get_account_with_commitment(&order_key, CommitmentConfig {
+                commitment: commitment_level,
+            })
             .await?
             .value;
         if order_data.is_none() {
