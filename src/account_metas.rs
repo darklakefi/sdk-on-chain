@@ -332,7 +332,7 @@ impl From<DarklakeAmmInitializePool> for Vec<AccountMeta> {
             AccountMeta::new_readonly(accounts.token_mint_y, false),
             AccountMeta::new_readonly(accounts.token_mint_wsol, false),
             AccountMeta::new(accounts.token_mint_lp, false),
-            AccountMeta::new_readonly(accounts.metadata_account, false),
+            AccountMeta::new(accounts.metadata_account, false),
             AccountMeta::new_readonly(accounts.metadata_account_x, false),
             AccountMeta::new_readonly(accounts.metadata_account_y, false),
             AccountMeta::new(accounts.user_token_account_x, false),
