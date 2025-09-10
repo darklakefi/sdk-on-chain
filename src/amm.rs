@@ -5,7 +5,7 @@ use solana_sdk::pubkey::Pubkey;
 use crate::darklake_amm::Order;
 
 /// Core AMM trait for Darklake DEX operations
-pub trait Amm: Send + Sync {
+pub(crate) trait Amm: Send + Sync {
     /// Deserialize the AMM from a keyed account
     fn load_pool(pool: &KeyedAccount) -> Result<Self>
     where
@@ -347,30 +347,8 @@ pub struct KeyedAccount {
     pub account: AccountData,
 }
 
-/// AMM context for operations
-#[derive(Debug, Clone)]
-pub struct AmmContext {
-    pub clock_ref: ClockRef,
-}
-
-/// Clock reference for AMM operations
-#[derive(Debug, Clone)]
-pub struct ClockRef {
-    pub slot: u64,
-    pub epoch: u64,
-}
-
-impl From<solana_sdk::clock::Clock> for ClockRef {
-    fn from(clock: solana_sdk::clock::Clock) -> Self {
-        Self {
-            slot: clock.slot,
-            epoch: clock.epoch,
-        }
-    }
-}
-
 /// Helper function to get account data from account map
-pub fn try_get_account_data<'a>(account_map: &'a AccountMap, pubkey: &Pubkey) -> Result<&'a [u8]> {
+pub(crate) fn try_get_account_data<'a>(account_map: &'a AccountMap, pubkey: &Pubkey) -> Result<&'a [u8]> {
     account_map
         .get(pubkey)
         .map(|account| account.data.as_slice())
@@ -378,7 +356,7 @@ pub fn try_get_account_data<'a>(account_map: &'a AccountMap, pubkey: &Pubkey) ->
 }
 
 /// Helper function to get account data and owner from account map
-pub fn try_get_account_data_and_owner<'a>(
+pub(crate) fn try_get_account_data_and_owner<'a>(
     account_map: &'a AccountMap,
     pubkey: &Pubkey,
 ) -> Result<(&'a [u8], &'a Pubkey)> {

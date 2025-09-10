@@ -7,8 +7,9 @@ use crate::constants::{
 };
 use crate::utils::get_transfer_fee;
 use crate::{
-    amm::*, DarklakeAmmAddLiquidity, DarklakeAmmCancel, DarklakeAmmRemoveLiquidity,
-    DarklakeAmmSettle, DarklakeAmmSlash, DarklakeAmmSwap,
+    amm::*, 
+    account_metas::{DarklakeAmmAddLiquidity, DarklakeAmmCancel, DarklakeAmmRemoveLiquidity,
+    DarklakeAmmSettle, DarklakeAmmSlash, DarklakeAmmSwap},
 };
 
 use crate::proof::proof_generator::{
@@ -29,7 +30,7 @@ use spl_token_2022::extension::{
 };
 
 #[derive(Clone)]
-pub struct DarklakeAmm {
+pub(crate) struct DarklakeAmm {
     pub key: Pubkey,
     pub pool: Pool,
     pub amm_config: AmmConfig,

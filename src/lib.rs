@@ -169,7 +169,4 @@ pub mod proof;
 pub mod sdk;
 pub mod utils;
 
-pub use account_metas::*;
-pub use amm::Amm;
-pub use darklake_amm::DarklakeAmm;
 pub use sdk::DarklakeSDK;

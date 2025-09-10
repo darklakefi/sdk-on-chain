@@ -6,7 +6,7 @@ use spl_associated_token_account::get_associated_token_address;
 use spl_token::native_mint;
 use spl_token_2022::extension::transfer_fee::TransferFeeConfig;
 
-pub fn get_transfer_fee(
+pub(crate) fn get_transfer_fee(
     transfer_fee_config: Option<TransferFeeConfig>,
     pre_fee_amount: u64,
 ) -> Result<u64> {
@@ -23,14 +23,14 @@ pub fn get_transfer_fee(
 }
 
 /// Generate a random 8-byte salt for order uniqueness
-pub fn generate_random_salt() -> [u8; 8] {
+pub(crate) fn generate_random_salt() -> [u8; 8] {
     let mut rng = OsRng;
     let mut salt = [0u8; 8];
     rng.fill_bytes(&mut salt);
     salt
 }
 
-pub fn get_wrap_sol_to_wsol_instructions(
+pub(crate) fn get_wrap_sol_to_wsol_instructions(
     payer: Pubkey,
     amount_in_lamports: u64,
 ) -> Result<Vec<Instruction>> {
@@ -65,7 +65,7 @@ pub fn get_wrap_sol_to_wsol_instructions(
     Ok(instructions)
 }
 
-pub fn get_close_wsol_instructions(payer: Pubkey) -> Result<Vec<Instruction>> {
+pub(crate) fn get_close_wsol_instructions(payer: Pubkey) -> Result<Vec<Instruction>> {
     let mut instructions = Vec::new();
 
     let token_mint_wsol = native_mint::ID;
