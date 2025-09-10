@@ -65,9 +65,7 @@ pub fn get_wrap_sol_to_wsol_instructions(
     Ok(instructions)
 }
 
-pub fn get_close_wsol_instructions(
-    payer: Pubkey,
-) -> Result<Vec<Instruction>> {
+pub fn get_close_wsol_instructions(payer: Pubkey) -> Result<Vec<Instruction>> {
     let mut instructions = Vec::new();
 
     let token_mint_wsol = native_mint::ID;
@@ -85,7 +83,7 @@ pub fn get_close_wsol_instructions(
         &wsol_ata,
         &payer, // destination for reclaimed rent
         &payer, // authority
-        &[], // multisig signers
+        &[],    // multisig signers
     )?;
 
     instructions.push(sync_native_ix);
