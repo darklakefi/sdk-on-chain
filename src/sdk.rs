@@ -7,8 +7,8 @@ use crate::{
         ProofCircuitPaths, ProofParams, Quote, QuoteParams, RemoveLiquidityParams, SwapMode,
         SwapParams,
     },
-    constants::{AMM_CONFIG, DARKLAKE_PROGRAM_ID, POOL_SEED, SOL_MINT},
-    darklake_amm::{DarklakeAmm, Order},
+    constants::{DARKLAKE_PROGRAM_ID, SOL_MINT},
+    darklake_amm::{AmmConfig, DarklakeAmm, Order, Pool},
     proof::proof_generator::find_circuit_path,
     utils::{generate_random_salt, get_close_wsol_instructions, get_wrap_sol_to_wsol_instructions},
 };
@@ -27,7 +27,7 @@ use tokio::time::{sleep, Duration};
 /// Stateful Darklake SDK that holds RPC client and signer
 pub struct DarklakeSDK {
     rpc_client: RpcClient,
-    darklake_amm: Option<DarklakeAmm>,
+    darklake_amm: DarklakeAmm,
     settle_paths: ProofCircuitPaths,
     cancel_paths: ProofCircuitPaths,
     is_devnet: bool, // supports only devnet or mainnet
@@ -57,7 +57,17 @@ impl DarklakeSDK {
 
         Self {
             rpc_client: RpcClient::new_with_commitment(rpc_endpoint.to_string(), commitment_config),
-            darklake_amm: None,
+            darklake_amm: DarklakeAmm {
+                key: Pubkey::default(),
+                pool: Pool::default(),
+                amm_config: AmmConfig::default(),
+                reserve_x_balance: 0,
+                reserve_y_balance: 0,
+                token_x_owner: Pubkey::default(),
+                token_y_owner: Pubkey::default(),
+                token_x_transfer_fee_config: None,
+                token_y_transfer_fee_config: None,
+            },
             settle_paths: ProofCircuitPaths {
                 wasm_path: settle_wasm_path,
                 zkey_path: settle_zkey_path,
@@ -103,14 +113,14 @@ impl DarklakeSDK {
 
         let (pool_key, _token_x, _token_y) = Self::get_pool_address(_token_in, _token_out);
 
-        if self.darklake_amm.is_none() || self.darklake_amm.as_ref().unwrap().key() != pool_key {
+        if self.darklake_amm.key() != pool_key {
             self.load_pool(_token_x, _token_y).await?;
         }
 
         // update accounts
         self.update_accounts().await?;
 
-        self.darklake_amm.as_ref().unwrap().quote(&QuoteParams {
+        self.darklake_amm.quote(&QuoteParams {
             input_mint: token_in,
             amount: amount_in,
             swap_mode: SwapMode::ExactIn,
@@ -152,7 +162,7 @@ impl DarklakeSDK {
 
         let (pool_key, _token_x, _token_y) = Self::get_pool_address(_token_in, _token_out);
 
-        if self.darklake_amm.is_none() || self.darklake_amm.as_ref().unwrap().key() != pool_key {
+        if self.darklake_amm.key() != pool_key {
             self.load_pool(_token_x, _token_y).await?;
         }
 
@@ -199,8 +209,6 @@ impl DarklakeSDK {
 
         let order_key = self
             .darklake_amm
-            .as_ref()
-            .unwrap()
             .get_order_pubkey(token_owner)?;
 
         Ok((swap_transaction, order_key, min_amount_out, salt))
@@ -245,8 +253,6 @@ impl DarklakeSDK {
 
         let order = self
             .darklake_amm
-            .as_ref()
-            .unwrap()
             .parse_order_data(&order_data.unwrap().data)?;
 
         // update accounts
@@ -317,8 +323,8 @@ impl DarklakeSDK {
             max_amount_y
         };
 
-        if self.darklake_amm.is_none() || self.darklake_amm.as_ref().unwrap().key() != pool_key {
-            self.load_pool(_token_x, _token_y).await?;
+        if self.darklake_amm.key() != pool_key {
+                        self.load_pool(_token_x, _token_y).await?;
         }
 
         // update accounts
@@ -383,14 +389,14 @@ impl DarklakeSDK {
             min_amount_y
         };
 
-        if self.darklake_amm.is_none() || self.darklake_amm.as_ref().unwrap().key() != pool_key {
+        if self.darklake_amm.key() != pool_key {
             self.load_pool(_token_x, _token_y).await?;
         }
 
         // update accounts
         self.update_accounts().await?;
 
-        let (token_x_owner, token_y_owner) = self.darklake_amm.as_ref().unwrap().get_token_owners();
+        let (token_x_owner, token_y_owner) = self.darklake_amm.get_token_owners();
 
         // make sure the user has the token accounts
         let create_token_x_ata_ix =
@@ -530,14 +536,14 @@ impl DarklakeSDK {
             },
         };
 
-        self.darklake_amm = Some(DarklakeAmm::load_pool(&pool_key_and_account)?);
+        self.darklake_amm = DarklakeAmm::load_pool(&pool_key_and_account)?;
 
         // returns sorted token mints
         Ok((pool_key, token_x, token_y))
     }
 
     pub async fn update_accounts(&mut self) -> Result<()> {
-        let accounts_to_update = self.darklake_amm.as_ref().unwrap().get_accounts_to_update();
+        let accounts_to_update = self.darklake_amm.get_accounts_to_update();
         let mut account_map = HashMap::new();
         for account_key in accounts_to_update {
             let account = self.rpc_client.get_account(&account_key).await?;
@@ -549,7 +555,7 @@ impl DarklakeSDK {
                 },
             );
         }
-        self.darklake_amm.as_mut().unwrap().update(&account_map)?;
+        self.darklake_amm.update(&account_map)?;
 
         Ok(())
     }
@@ -557,8 +563,6 @@ impl DarklakeSDK {
     pub async fn swap_ix(&mut self, swap_params: SwapParams) -> Result<Instruction> {
         let swap_and_account_metas = self
             .darklake_amm
-            .as_ref()
-            .unwrap()
             .get_swap_and_account_metas(&swap_params)
             .context("Failed to get swap instruction and account metadata")?;
 
@@ -575,7 +579,7 @@ impl DarklakeSDK {
         user: Pubkey,
         commitment_level: CommitmentLevel,
     ) -> Result<Order> {
-        let order_key = self.darklake_amm.as_ref().unwrap().get_order_pubkey(user)?;
+        let order_key = self.darklake_amm.get_order_pubkey(user)?;
 
         let order_data = self
             .rpc_client
@@ -595,8 +599,6 @@ impl DarklakeSDK {
 
         let order = self
             .darklake_amm
-            .as_ref()
-            .unwrap()
             .parse_order_data(&order_data.data)?;
 
         Ok(order)
@@ -605,8 +607,6 @@ impl DarklakeSDK {
     pub async fn finalize_ix(&mut self, finalize_params: FinalizeParams) -> Result<Instruction> {
         let finalize_and_account_metas = self
             .darklake_amm
-            .as_ref()
-            .unwrap()
             .get_finalize_and_account_metas(
                 &finalize_params,
                 &ProofParams {
@@ -630,8 +630,6 @@ impl DarklakeSDK {
     ) -> Result<Instruction> {
         let add_liquidity_and_account_metas = self
             .darklake_amm
-            .as_ref()
-            .unwrap()
             .get_add_liquidity_and_account_metas(&add_liquidity_params)?;
 
         Ok(Instruction {
@@ -647,8 +645,6 @@ impl DarklakeSDK {
     ) -> Result<Instruction> {
         let remove_liquidity_and_account_metas = self
             .darklake_amm
-            .as_ref()
-            .unwrap()
             .get_remove_liquidity_and_account_metas(&remove_liquidity_params)?;
 
         Ok(Instruction {
@@ -664,8 +660,6 @@ impl DarklakeSDK {
     ) -> Result<Instruction> {
         let initialize_pool_and_account_metas = self
             .darklake_amm
-            .as_ref()
-            .unwrap()
             .get_initialize_pool_and_account_metas(&initialize_pool_params, self.is_devnet)?;
 
         Ok(Instruction {

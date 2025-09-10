@@ -22,9 +22,8 @@ pub const ORDER_SEED: &[u8] = b"order";
 pub const LIQUIDITY_SEED: &[u8] = b"lp";
 pub const ORDER_WSOL_SEED: &[u8] = b"order_wsol";
 pub const METADATA_SEED: &[u8] = b"metadata";
+pub const POOL_RESERVE_SEED: &[u8] = b"pool_reserve";
 
-// only used during pool initialization
-// pub const POOL_RESERVE_SEED: &[u8] = b"pool_reserve";
 
 lazy_static! {
     pub static ref AMM_CONFIG: Pubkey = Pubkey::find_program_address(

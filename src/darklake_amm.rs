@@ -4,9 +4,7 @@ use solana_sdk::sysvar::SysvarId;
 
 use crate::account_metas::DarklakeAmmInitializePool;
 use crate::constants::{
-    AMM_CONFIG, AUTHORITY, DARKLAKE_PROGRAM_ID, DEVNET_CREATE_POOL_FEE_VAULT, LIQUIDITY_SEED,
-    MAINNET_CREATE_POOL_FEE_VAULT, METADATA_PROGRAM_ID, METADATA_SEED, ORDER_SEED, ORDER_WSOL_SEED,
-    POOL_SEED, POOL_WSOL_RESERVE_SEED,
+    AMM_CONFIG, AUTHORITY, DARKLAKE_PROGRAM_ID, DEVNET_CREATE_POOL_FEE_VAULT, LIQUIDITY_SEED, MAINNET_CREATE_POOL_FEE_VAULT, METADATA_PROGRAM_ID, METADATA_SEED, ORDER_SEED, ORDER_WSOL_SEED, POOL_RESERVE_SEED, POOL_SEED, POOL_WSOL_RESERVE_SEED
 };
 use crate::utils::get_transfer_fee;
 use crate::{
@@ -47,7 +45,7 @@ pub(crate) struct DarklakeAmm {
     pub token_y_transfer_fee_config: Option<TransferFeeConfig>,
 }
 
-#[derive(AnchorSerialize, AnchorDeserialize, Clone)]
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Default)]
 pub struct AmmConfig {
     pub trade_fee_rate: u64,    // 10^6 = 100%
     pub create_pool_fee: u64,   // flat SOL fee for creating a pool
@@ -93,7 +91,7 @@ pub struct Order {
     pub padding: [u64; 4],
 }
 
-#[derive(AnchorSerialize, AnchorDeserialize, Clone)]
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Default)]
 pub struct Pool {
     // pubkeys
     pub creator: Pubkey,
@@ -302,7 +300,7 @@ impl Amm for DarklakeAmm {
             self.token_y_owner,
         );
 
-        let pool_wsol_reserve = self.get_pool_wsol_reserve();
+        let pool_wsol_reserve = DarklakeAmm::get_pool_wsol_reserve(self.key);
         let order = self.get_order(*token_transfer_authority);
 
         // ADD C_MIN COMMITMENT CALCULATION HERE
@@ -402,7 +400,7 @@ impl Amm for DarklakeAmm {
 
         let authority = AUTHORITY.key();
 
-        let pool_wsol_reserve = self.get_pool_wsol_reserve();
+        let pool_wsol_reserve = DarklakeAmm::get_pool_wsol_reserve(self.key);
 
         let user_token_account_wsol =
             DarklakeAmm::get_user_token_account(*order_owner, native_mint::ID, spl_token::ID);
@@ -524,7 +522,7 @@ impl Amm for DarklakeAmm {
 
         let authority = AUTHORITY.key();
 
-        let pool_wsol_reserve = self.get_pool_wsol_reserve();
+        let pool_wsol_reserve = DarklakeAmm::get_pool_wsol_reserve(self.key);
 
         let user_token_account_wsol =
             DarklakeAmm::get_user_token_account(*order_owner, native_mint::ID, spl_token::ID);
@@ -638,7 +636,7 @@ impl Amm for DarklakeAmm {
 
         let authority = AUTHORITY.key();
 
-        let pool_wsol_reserve = self.get_pool_wsol_reserve();
+        let pool_wsol_reserve = DarklakeAmm::get_pool_wsol_reserve(self.key);
 
         let user_token_account_x = DarklakeAmm::get_user_token_account(
             *order_owner,
@@ -903,9 +901,9 @@ impl Amm for DarklakeAmm {
 
         let token_mint_lp = DarklakeAmm::get_token_mint_lp(pool_address);
 
-        let metadata_account = self.get_token_metadata(token_mint_lp);
-        let metadata_account_x = self.get_token_metadata(self.pool.token_mint_x);
-        let metadata_account_y = self.get_token_metadata(self.pool.token_mint_y);
+        let metadata_account = DarklakeAmm::get_token_metadata(token_mint_lp);
+        let metadata_account_x = DarklakeAmm::get_token_metadata(*token_x);
+        let metadata_account_y = DarklakeAmm::get_token_metadata(*token_y);
 
         let user_token_account_lp =
             DarklakeAmm::get_user_token_account(*user, token_mint_lp, spl_token::ID);
@@ -925,11 +923,11 @@ impl Amm for DarklakeAmm {
             data,
             account_metas: DarklakeAmmInitializePool {
                 user: *user,
-                pool: self.key,
+                pool: pool_address,
                 authority,
-                amm_config: self.pool.amm_config,
-                token_mint_x: self.pool.token_mint_x,
-                token_mint_y: self.pool.token_mint_y,
+                amm_config: *AMM_CONFIG,
+                token_mint_x: *token_x,
+                token_mint_y: *token_y,
                 token_mint_wsol: native_mint::ID,
                 token_mint_lp,
                 metadata_account, // lp
@@ -938,9 +936,9 @@ impl Amm for DarklakeAmm {
                 user_token_account_x,
                 user_token_account_y,
                 user_token_account_lp,
-                pool_token_reserve_x: self.pool.reserve_x,
-                pool_token_reserve_y: self.pool.reserve_y,
-                pool_wsol_reserve: self.get_pool_wsol_reserve(),
+                pool_token_reserve_x: DarklakeAmm::get_pool_reserve(pool_address, *token_x),
+                pool_token_reserve_y: DarklakeAmm::get_pool_reserve(pool_address, *token_y),
+                pool_wsol_reserve: DarklakeAmm::get_pool_wsol_reserve(pool_address),
                 create_pool_fee_vault: if is_devnet {
                     DEVNET_CREATE_POOL_FEE_VAULT
                 } else {
@@ -950,8 +948,8 @@ impl Amm for DarklakeAmm {
                 system_program: system_program::ID,
                 rent: Rent::id(),
                 associated_token_program: spl_associated_token_account::ID,
-                token_mint_x_program: self.token_x_owner,
-                token_mint_y_program: self.token_y_owner,
+                token_mint_x_program: *token_x_program,
+                token_mint_y_program: *token_y_program,
                 token_program: spl_token::ID,
             }
             .into(),
@@ -1028,10 +1026,10 @@ impl DarklakeAmm {
         .0
     }
 
-    fn get_pool_wsol_reserve(&self) -> Pubkey {
+    pub fn get_pool_wsol_reserve(pool: Pubkey) -> Pubkey {
         Pubkey::find_program_address(
-            &[POOL_WSOL_RESERVE_SEED, self.key.as_ref()],
-            &self.program_id(),
+            &[POOL_WSOL_RESERVE_SEED, pool.as_ref()],
+            &DARKLAKE_PROGRAM_ID,
         )
         .0
     }
@@ -1069,7 +1067,7 @@ impl DarklakeAmm {
         .0
     }
 
-    fn get_token_metadata(&self, token_mint: Pubkey) -> Pubkey {
+    pub fn get_token_metadata(token_mint: Pubkey) -> Pubkey {
         Pubkey::find_program_address(
             &[
                 METADATA_SEED,
@@ -1077,6 +1075,14 @@ impl DarklakeAmm {
                 token_mint.as_ref(),
             ],
             &METADATA_PROGRAM_ID,
+        )
+        .0
+    }
+
+    pub fn get_pool_reserve(pool: Pubkey, token_mint: Pubkey) -> Pubkey {
+        Pubkey::find_program_address(
+            &[POOL_RESERVE_SEED, pool.as_ref(), token_mint.as_ref()],
+            &DARKLAKE_PROGRAM_ID,
         )
         .0
     }
