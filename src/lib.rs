@@ -166,10 +166,10 @@ pub mod amm;
 pub mod constants;
 pub mod darklake_amm;
 pub mod proof;
-pub mod utils;
 pub mod sdk;
+pub mod utils;
 
+pub use account_metas::*;
+pub use amm::Amm;
 pub use darklake_amm::DarklakeAmm;
 pub use sdk::DarklakeSDK;
-pub use account_metas::*;
-pub use amm::*;

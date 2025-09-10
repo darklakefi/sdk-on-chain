@@ -2,21 +2,25 @@ use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 use spl_token::native_mint;
 
 use crate::{
-    constants::{AMM_CONFIG, DARKLAKE_PROGRAM_ID, POOL_SEED, SOL_MINT},
-    darklake_amm::{DarklakeAmm, Order},
     amm::{
         AccountData, AddLiquidityParams, Amm, FinalizeParams, KeyedAccount, Quote, QuoteParams,
         RemoveLiquidityParams, SwapMode, SwapParams,
     },
+    constants::{AMM_CONFIG, DARKLAKE_PROGRAM_ID, POOL_SEED, SOL_MINT},
+    darklake_amm::{DarklakeAmm, Order},
     utils::{generate_random_salt, get_close_wsol_instructions, get_wrap_sol_to_wsol_instructions},
 };
 use anyhow::{Context, Result};
 use solana_sdk::{
-    commitment_config::{CommitmentConfig, CommitmentLevel}, compute_budget::ComputeBudgetInstruction,
-    instruction::Instruction, message::Message, pubkey::Pubkey, transaction::Transaction,
+    commitment_config::{CommitmentConfig, CommitmentLevel},
+    compute_budget::ComputeBudgetInstruction,
+    instruction::Instruction,
+    message::Message,
+    pubkey::Pubkey,
+    transaction::Transaction,
 };
-use tokio::time::{sleep, Duration};
 use std::collections::HashMap;
+use tokio::time::{sleep, Duration};
 
 /// Stateful Darklake SDK that holds RPC client and signer
 pub struct DarklakeSDK {
@@ -470,14 +474,21 @@ impl DarklakeSDK {
     }
 
     // does not require load_pool or update_accounts is a standalone function after new() is called
-    pub async fn get_order(&mut self, user: Pubkey, commitment_level: CommitmentLevel) -> Result<Order> {
+    pub async fn get_order(
+        &mut self,
+        user: Pubkey,
+        commitment_level: CommitmentLevel,
+    ) -> Result<Order> {
         let order_key = self.darklake_amm.as_ref().unwrap().get_order_pubkey(user)?;
 
         let order_data = self
             .rpc_client
-            .get_account_with_commitment(&order_key, CommitmentConfig {
-                commitment: commitment_level,
-            })
+            .get_account_with_commitment(
+                &order_key,
+                CommitmentConfig {
+                    commitment: commitment_level,
+                },
+            )
             .await?
             .value;
         if order_data.is_none() {
