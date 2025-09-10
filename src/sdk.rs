@@ -470,8 +470,8 @@ impl DarklakeSDK {
             amount_y
         };
 
-        let token_x_account = self.rpc_client.get_account(&token_x).await?;
-        let token_y_account = self.rpc_client.get_account(&token_y).await?;
+        let token_x_account = self.rpc_client.get_account(&_token_x).await?;
+        let token_y_account = self.rpc_client.get_account(&_token_y).await?;
 
         let initialize_pool_params = InitializePoolParams {
             user,
