@@ -478,4 +478,7 @@ mod utils;
 pub use sdk::DarklakeSDK;
 
 // Re-export commonly used AMM types for easier access
-pub use amm::{AddLiquidityParams, FinalizeParams, RemoveLiquidityParams, SwapMode, SwapParams, InitializePoolParams};
+pub use amm::{
+    AddLiquidityParams, FinalizeParams, InitializePoolParams, RemoveLiquidityParams, SwapMode,
+    SwapParams,
+};
