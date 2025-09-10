@@ -304,15 +304,10 @@ impl DarklakeSDK {
         let (pool_key, _token_x, _token_y) =
             Self::get_pool_address(token_x_post_sol, token_y_post_sol);
 
-        let max_amount_x = if _token_x != token_x_post_sol {
-            max_amount_y
+        let (max_amount_x, max_amount_y) = if _token_x != token_x_post_sol {
+            (max_amount_y, max_amount_x)
         } else {
-            max_amount_x
-        };
-        let max_amount_y = if _token_x != token_x_post_sol {
-            max_amount_x
-        } else {
-            max_amount_y
+            (max_amount_x, max_amount_y)
         };
 
         if self.darklake_amm.key() != pool_key {
@@ -370,15 +365,10 @@ impl DarklakeSDK {
         let (pool_key, _token_x, _token_y) =
             Self::get_pool_address(token_x_post_sol, token_y_post_sol);
 
-        let min_amount_x = if _token_x != token_x_post_sol {
-            min_amount_y
+        let (min_amount_x, min_amount_y) = if _token_x != token_x_post_sol {
+            (min_amount_y, min_amount_x)
         } else {
-            min_amount_x
-        };
-        let min_amount_y = if _token_x != token_x_post_sol {
-            min_amount_x
-        } else {
-            min_amount_y
+            (min_amount_x, min_amount_y)
         };
 
         if self.darklake_amm.key() != pool_key {
@@ -453,15 +443,10 @@ impl DarklakeSDK {
         let (_pool_key, _token_x, _token_y) =
             Self::get_pool_address(token_x_post_sol, token_y_post_sol);
 
-        let amount_x = if _token_x != token_x_post_sol {
-            amount_y
+        let (amount_x, amount_y) = if _token_x != token_x_post_sol {
+            (amount_y, amount_x)
         } else {
-            amount_x
-        };
-        let amount_y = if _token_x != token_x_post_sol {
-            amount_x
-        } else {
-            amount_y
+            (amount_x, amount_y)
         };
 
         let token_x_account = self.rpc_client.get_account(&_token_x).await?;
