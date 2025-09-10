@@ -181,7 +181,7 @@ impl DarklakeSDK {
             salt,                    // Random salt for order uniqueness
         };
 
-        let swap_instruction = self.swap_ix(swap_params).await?;
+        let swap_instruction = self.swap_ix(swap_params)?;
 
         let compute_budget_ix = ComputeBudgetInstruction::set_compute_unit_limit(300_000);
 
@@ -197,12 +197,9 @@ impl DarklakeSDK {
 
         instructions.push(swap_instruction);
 
-        // let recent_blockhash = self.rpc_client.get_latest_blockhash().await?;
-
         let message = Message::new(
             &instructions,
             Some(&token_owner),
-            // recent_blockhash,
         );
 
         let swap_transaction = Transaction::new_unsigned(message);
@@ -282,7 +279,7 @@ impl DarklakeSDK {
                 .await?,
         };
 
-        let finalize_instruction = self.finalize_ix(finalize_params).await?;
+        let finalize_instruction = self.finalize_ix(finalize_params)?;
 
         let compute_budget_ix = ComputeBudgetInstruction::set_compute_unit_limit(500_000);
 
@@ -337,7 +334,7 @@ impl DarklakeSDK {
             user,
         };
 
-        let add_liquidity_instruction = self.add_liquidity_ix(add_liquidity_params).await?;
+        let add_liquidity_instruction = self.add_liquidity_ix(add_liquidity_params)?;
 
         let mut instructions = vec![];
         if is_x_sol {
@@ -423,7 +420,7 @@ impl DarklakeSDK {
         };
 
         let remove_liquidity_instruction =
-            self.remove_liquidity_ix(remove_liquidity_params).await?;
+            self.remove_liquidity_ix(remove_liquidity_params)?;
 
         let mut instructions = vec![
             create_token_x_ata_ix,
@@ -488,7 +485,7 @@ impl DarklakeSDK {
 
         let compute_budget_ix: Instruction = ComputeBudgetInstruction::set_compute_unit_limit(500_000);
 
-        let initialize_pool_instruction = self.initialize_pool_ix(initialize_pool_params).await?;
+        let initialize_pool_instruction = self.initialize_pool_ix(initialize_pool_params)?;
 
         let mut instructions = vec![compute_budget_ix];
         if is_x_sol {
@@ -562,7 +559,7 @@ impl DarklakeSDK {
         Ok(())
     }
 
-    pub async fn swap_ix(&mut self, swap_params: SwapParams) -> Result<Instruction> {
+    pub fn swap_ix(&mut self, swap_params: SwapParams) -> Result<Instruction> {
         let swap_and_account_metas = self
             .darklake_amm
             .get_swap_and_account_metas(&swap_params)
@@ -606,7 +603,7 @@ impl DarklakeSDK {
         Ok(order)
     }
 
-    pub async fn finalize_ix(&mut self, finalize_params: FinalizeParams) -> Result<Instruction> {
+    pub fn finalize_ix(&mut self, finalize_params: FinalizeParams) -> Result<Instruction> {
         let finalize_and_account_metas = self
             .darklake_amm
             .get_finalize_and_account_metas(
@@ -626,7 +623,7 @@ impl DarklakeSDK {
         })
     }
 
-    pub async fn add_liquidity_ix(
+    pub fn add_liquidity_ix(
         &mut self,
         add_liquidity_params: AddLiquidityParams,
     ) -> Result<Instruction> {
@@ -641,7 +638,7 @@ impl DarklakeSDK {
         })
     }
 
-    pub async fn remove_liquidity_ix(
+    pub fn remove_liquidity_ix(
         &mut self,
         remove_liquidity_params: RemoveLiquidityParams,
     ) -> Result<Instruction> {
@@ -656,7 +653,7 @@ impl DarklakeSDK {
         })
     }
 
-    pub async fn initialize_pool_ix(
+    pub fn initialize_pool_ix(
         &mut self,
         initialize_pool_params: InitializePoolParams,
     ) -> Result<Instruction> {
