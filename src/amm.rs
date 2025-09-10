@@ -72,6 +72,13 @@ pub(crate) trait Amm: Send + Sync {
         slash_params: &SlashParams,
     ) -> Result<SlashAndAccountMetas>;
 
+    /// Get slash parameters and account metadata
+    fn get_initialize_pool_and_account_metas(
+        &self,
+        initialize_pool_params: &InitializePoolParams,
+        is_devnet: bool,
+    ) -> Result<InitializePoolAndAccountMetas>;
+
     /// Get add liquidity parameters and account metadata
     fn get_add_liquidity_and_account_metas(
         &self,
@@ -184,6 +191,18 @@ pub struct AddLiquidityParams {
     pub max_amount_y: u64,
 }
 
+/// Initialize pool parameters
+#[derive(Debug, Clone)]
+pub struct InitializePoolParams {
+    pub user: Pubkey,
+    pub token_x: Pubkey,
+    pub token_x_program: Pubkey,
+    pub token_y: Pubkey,
+    pub token_y_program: Pubkey,
+    pub amount_x: u64,
+    pub amount_y: u64,
+}
+
 /// Remove liquidity parameters
 #[derive(Debug, Clone)]
 pub struct RemoveLiquidityParams {
@@ -289,6 +308,15 @@ pub struct SlashAndAccountMetas {
     pub account_metas: Vec<AccountMeta>,
 }
 
+/// Initialize pool result with account metadata
+#[derive(Debug, Clone)]
+pub struct InitializePoolAndAccountMetas {
+    pub discriminator: [u8; 8],
+    pub initialize_pool: DarklakeAmmInitializePoolParams,
+    pub data: Vec<u8>,
+    pub account_metas: Vec<AccountMeta>,
+}
+
 /// Darklake AMM swap parameters
 #[derive(Debug, Clone)]
 pub struct DarklakeAmmSwapParams {
@@ -319,6 +347,13 @@ pub struct DarklakeAmmCancelParams {
 /// Darklake AMM slash parameters
 #[derive(Debug, Clone)]
 pub struct DarklakeAmmSlashParams {}
+
+/// Darklake AMM initialize pool parameters
+#[derive(Debug, Clone)]
+pub struct DarklakeAmmInitializePoolParams {
+    pub amount_x: u64,
+    pub amount_y: u64,
+}
 
 /// Darklake AMM add liquidity parameters
 #[derive(Debug, Clone)]
