@@ -47,6 +47,7 @@ pub(crate) trait Amm: Send + Sync {
     fn get_settle_and_account_metas(
         &self,
         settle_params: &SettleParams,
+        proof_params: &ProofParams,
     ) -> Result<SettleAndAccountMetas>;
 
     /// Get order pubkey
@@ -62,6 +63,7 @@ pub(crate) trait Amm: Send + Sync {
     fn get_cancel_and_account_metas(
         &self,
         cancel_params: &CancelParams,
+        proof_params: &ProofParams,
     ) -> Result<CancelAndAccountMetas>;
 
     /// Get slash parameters and account metadata
@@ -86,6 +88,8 @@ pub(crate) trait Amm: Send + Sync {
     fn get_finalize_and_account_metas(
         &self,
         finalize_params: &FinalizeParams,
+        settle_proof_params: &ProofParams,
+        cancel_proof_params: &ProofParams,
     ) -> Result<FinalizeAndAccountMetas>;
 }
 
@@ -273,14 +277,6 @@ impl FinalizeAndAccountMetas {
             FinalizeAndAccountMetas::Slash(slash) => slash.account_metas.clone(),
         }
     }
-
-    pub fn discriminator(&self) -> [u8; 8] {
-        match self {
-            FinalizeAndAccountMetas::Settle(settle) => settle.discriminator,
-            FinalizeAndAccountMetas::Cancel(cancel) => cancel.discriminator,
-            FinalizeAndAccountMetas::Slash(slash) => slash.discriminator,
-        }
-    }
 }
 
 /// Slash result with account metadata
@@ -347,8 +343,22 @@ pub struct KeyedAccount {
     pub account: AccountData,
 }
 
+#[derive(Debug, Clone)]
+pub(crate) struct ProofCircuitPaths {
+    pub wasm_path: String,
+    pub zkey_path: String,
+    pub r1cs_path: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct ProofParams {
+    pub paths: ProofCircuitPaths,
+}
 /// Helper function to get account data from account map
-pub(crate) fn try_get_account_data<'a>(account_map: &'a AccountMap, pubkey: &Pubkey) -> Result<&'a [u8]> {
+pub(crate) fn try_get_account_data<'a>(
+    account_map: &'a AccountMap,
+    pubkey: &Pubkey,
+) -> Result<&'a [u8]> {
     account_map
         .get(pubkey)
         .map(|account| account.data.as_slice())

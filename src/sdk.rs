@@ -3,11 +3,12 @@ use spl_token::native_mint;
 
 use crate::{
     amm::{
-        AccountData, AddLiquidityParams, Amm, FinalizeParams, KeyedAccount, Quote, QuoteParams,
-        RemoveLiquidityParams, SwapMode, SwapParams,
+        AccountData, AddLiquidityParams, Amm, FinalizeParams, KeyedAccount, ProofCircuitPaths,
+        ProofParams, Quote, QuoteParams, RemoveLiquidityParams, SwapMode, SwapParams,
     },
     constants::{AMM_CONFIG, DARKLAKE_PROGRAM_ID, POOL_SEED, SOL_MINT},
     darklake_amm::{DarklakeAmm, Order},
+    proof::proof_generator::find_circuit_path,
     utils::{generate_random_salt, get_close_wsol_instructions, get_wrap_sol_to_wsol_instructions},
 };
 use anyhow::{Context, Result};
@@ -26,6 +27,8 @@ use tokio::time::{sleep, Duration};
 pub struct DarklakeSDK {
     rpc_client: RpcClient,
     darklake_amm: Option<DarklakeAmm>,
+    settle_paths: ProofCircuitPaths,
+    cancel_paths: ProofCircuitPaths,
 }
 
 impl DarklakeSDK {
@@ -35,9 +38,30 @@ impl DarklakeSDK {
             commitment: commitment_level,
         };
 
+        let settle_file_prefix = "settle";
+        let cancel_file_prefix = "cancel";
+
+        let settle_wasm_path = find_circuit_path(&format!("{}.wasm", settle_file_prefix));
+        let settle_zkey_path = find_circuit_path(&format!("{}_final.zkey", settle_file_prefix));
+        let settle_r1cs_path = find_circuit_path(&format!("{}.r1cs", settle_file_prefix));
+
+        let cancel_wasm_path = find_circuit_path(&format!("{}.wasm", cancel_file_prefix));
+        let cancel_zkey_path = find_circuit_path(&format!("{}_final.zkey", cancel_file_prefix));
+        let cancel_r1cs_path = find_circuit_path(&format!("{}.r1cs", cancel_file_prefix));
+
         Self {
             rpc_client: RpcClient::new_with_commitment(rpc_endpoint.to_string(), commitment_config),
             darklake_amm: None,
+            settle_paths: ProofCircuitPaths {
+                wasm_path: settle_wasm_path,
+                zkey_path: settle_zkey_path,
+                r1cs_path: settle_r1cs_path,
+            },
+            cancel_paths: ProofCircuitPaths {
+                wasm_path: cancel_wasm_path,
+                zkey_path: cancel_zkey_path,
+                r1cs_path: cancel_r1cs_path,
+            },
         }
     }
 
@@ -511,7 +535,15 @@ impl DarklakeSDK {
             .darklake_amm
             .as_ref()
             .unwrap()
-            .get_finalize_and_account_metas(&finalize_params)?;
+            .get_finalize_and_account_metas(
+                &finalize_params,
+                &ProofParams {
+                    paths: self.settle_paths.clone(),
+                },
+                &ProofParams {
+                    paths: self.cancel_paths.clone(),
+                },
+            )?;
 
         Ok(Instruction {
             program_id: DARKLAKE_PROGRAM_ID,

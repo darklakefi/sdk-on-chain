@@ -7,9 +7,11 @@ use crate::constants::{
 };
 use crate::utils::get_transfer_fee;
 use crate::{
-    amm::*, 
-    account_metas::{DarklakeAmmAddLiquidity, DarklakeAmmCancel, DarklakeAmmRemoveLiquidity,
-    DarklakeAmmSettle, DarklakeAmmSlash, DarklakeAmmSwap},
+    account_metas::{
+        DarklakeAmmAddLiquidity, DarklakeAmmCancel, DarklakeAmmRemoveLiquidity, DarklakeAmmSettle,
+        DarklakeAmmSlash, DarklakeAmmSwap,
+    },
+    amm::*,
 };
 
 use crate::proof::proof_generator::{
@@ -373,6 +375,7 @@ impl Amm for DarklakeAmm {
     fn get_settle_and_account_metas(
         &self,
         settle_params: &SettleParams,
+        proof_params: &ProofParams,
     ) -> Result<SettleAndAccountMetas> {
         let SettleParams {
             settle_signer,
@@ -417,8 +420,14 @@ impl Amm for DarklakeAmm {
         };
 
         // ADD PROOF CALCULATION HERE
-        let (proof, _) = generate_proof(&private_inputs, &public_inputs, false)
-            .map_err(|e| anyhow::anyhow!("Failed to generate proof: {}", e))?;
+        let (proof, _) = generate_proof(
+            &private_inputs,
+            &public_inputs,
+            &proof_params.paths.wasm_path,
+            &proof_params.paths.zkey_path,
+            &proof_params.paths.r1cs_path,
+        )
+        .map_err(|e| anyhow::anyhow!("Failed to generate proof: {}", e))?;
 
         let solana_proof = convert_proof_to_solana_proof(&proof, &public_inputs);
         let public_inputs_vec = solana_proof.public_signals.clone();
@@ -483,6 +492,7 @@ impl Amm for DarklakeAmm {
     fn get_cancel_and_account_metas(
         &self,
         cancel_params: &CancelParams,
+        proof_params: &ProofParams,
     ) -> Result<CancelAndAccountMetas> {
         let CancelParams {
             settle_signer,
@@ -525,8 +535,14 @@ impl Amm for DarklakeAmm {
         };
 
         // ADD PROOF CALCULATION HERE
-        let (proof, _) = generate_proof(&private_inputs, &public_inputs, true)
-            .map_err(|e| anyhow::anyhow!("Failed to generate proof: {}", e))?;
+        let (proof, _) = generate_proof(
+            &private_inputs,
+            &public_inputs,
+            &proof_params.paths.wasm_path,
+            &proof_params.paths.zkey_path,
+            &proof_params.paths.r1cs_path,
+        )
+        .map_err(|e| anyhow::anyhow!("Failed to generate proof: {}", e))?;
 
         let solana_proof = convert_proof_to_solana_proof(&proof, &public_inputs);
         let public_inputs_vec = solana_proof.public_signals.clone();
@@ -651,6 +667,8 @@ impl Amm for DarklakeAmm {
     fn get_finalize_and_account_metas(
         &self,
         finalize_params: &FinalizeParams,
+        settle_proof_params: &ProofParams,
+        cancel_proof_params: &ProofParams,
     ) -> Result<FinalizeAndAccountMetas> {
         let FinalizeParams {
             settle_signer,
@@ -679,30 +697,36 @@ impl Amm for DarklakeAmm {
             ));
         } else if is_settle {
             return Ok(FinalizeAndAccountMetas::Settle(
-                self.get_settle_and_account_metas(&SettleParams {
-                    settle_signer: *settle_signer,
-                    order_owner: *order_owner,
-                    unwrap_wsol: *unwrap_wsol,
-                    min_out: *min_out,
-                    salt: *salt,
-                    output: *output,
-                    commitment: *commitment,
-                    deadline: *deadline,
-                    current_slot: *current_slot,
-                })?,
+                self.get_settle_and_account_metas(
+                    &SettleParams {
+                        settle_signer: *settle_signer,
+                        order_owner: *order_owner,
+                        unwrap_wsol: *unwrap_wsol,
+                        min_out: *min_out,
+                        salt: *salt,
+                        output: *output,
+                        commitment: *commitment,
+                        deadline: *deadline,
+                        current_slot: *current_slot,
+                    },
+                    &settle_proof_params,
+                )?,
             ));
         } else {
             return Ok(FinalizeAndAccountMetas::Cancel(
-                self.get_cancel_and_account_metas(&CancelParams {
-                    settle_signer: *settle_signer,
-                    order_owner: *order_owner,
-                    min_out: *min_out,
-                    salt: *salt,
-                    output: *output,
-                    commitment: *commitment,
-                    deadline: *deadline,
-                    current_slot: *current_slot,
-                })?,
+                self.get_cancel_and_account_metas(
+                    &CancelParams {
+                        settle_signer: *settle_signer,
+                        order_owner: *order_owner,
+                        min_out: *min_out,
+                        salt: *salt,
+                        output: *output,
+                        commitment: *commitment,
+                        deadline: *deadline,
+                        current_slot: *current_slot,
+                    },
+                    &cancel_proof_params,
+                )?,
             ));
         }
     }

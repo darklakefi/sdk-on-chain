@@ -162,7 +162,7 @@
 //! **Note**: This SDK is for interacting with the Darklake DEX on Solana. Always test thoroughly on devnet before using on mainnet.
 
 mod account_metas;
-mod amm;  // Private module - users should use re-exported types
+mod amm; // Private module - users should use re-exported types
 mod constants;
 mod darklake_amm;
 mod proof;
@@ -172,6 +172,4 @@ mod utils;
 pub use sdk::DarklakeSDK;
 
 // Re-export commonly used AMM types for easier access
-pub use amm::{
-    AddLiquidityParams, RemoveLiquidityParams, FinalizeParams, SwapMode, SwapParams
-};
+pub use amm::{AddLiquidityParams, FinalizeParams, RemoveLiquidityParams, SwapMode, SwapParams};
