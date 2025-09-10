@@ -486,9 +486,11 @@ impl DarklakeSDK {
             amount_y,
         };
 
+        let compute_budget_ix: Instruction = ComputeBudgetInstruction::set_compute_unit_limit(500_000);
+
         let initialize_pool_instruction = self.initialize_pool_ix(initialize_pool_params).await?;
 
-        let mut instructions = vec![];
+        let mut instructions = vec![compute_budget_ix];
         if is_x_sol {
             let sol_to_wsol_instructions = get_wrap_sol_to_wsol_instructions(user, amount_x)?;
             instructions.push(sol_to_wsol_instructions[0].clone());
