@@ -3,11 +3,12 @@ use spl_token::native_mint;
 
 use crate::{
     amm::{
-        AccountData, AddLiquidityParams, Amm, FinalizeParams, KeyedAccount, ProofCircuitPaths,
-        ProofParams, Quote, QuoteParams, RemoveLiquidityParams, SwapMode, SwapParams,
+        AccountData, AddLiquidityParams, Amm, FinalizeParams, InitializePoolParams, KeyedAccount,
+        ProofCircuitPaths, ProofParams, Quote, QuoteParams, RemoveLiquidityParams, SwapMode,
+        SwapParams,
     },
-    constants::{AMM_CONFIG, DARKLAKE_PROGRAM_ID, POOL_SEED, SOL_MINT},
-    darklake_amm::{DarklakeAmm, Order},
+    constants::{DARKLAKE_PROGRAM_ID, SOL_MINT},
+    darklake_amm::{AmmConfig, DarklakeAmm, Order, Pool},
     proof::proof_generator::find_circuit_path,
     utils::{generate_random_salt, get_close_wsol_instructions, get_wrap_sol_to_wsol_instructions},
 };
@@ -26,14 +27,19 @@ use tokio::time::{sleep, Duration};
 /// Stateful Darklake SDK that holds RPC client and signer
 pub struct DarklakeSDK {
     rpc_client: RpcClient,
-    darklake_amm: Option<DarklakeAmm>,
+    darklake_amm: DarklakeAmm,
     settle_paths: ProofCircuitPaths,
     cancel_paths: ProofCircuitPaths,
+    is_devnet: bool, // supports only devnet or mainnet
 }
 
 impl DarklakeSDK {
     /// Create a new Darklake SDK instance
-    pub fn new(rpc_endpoint: &str, commitment_level: CommitmentLevel) -> Self {
+    pub fn new(
+        rpc_endpoint: &str,
+        commitment_level: CommitmentLevel,
+        is_devnet: bool, // only used for pool initialization
+    ) -> Self {
         let commitment_config = CommitmentConfig {
             commitment: commitment_level,
         };
@@ -51,7 +57,17 @@ impl DarklakeSDK {
 
         Self {
             rpc_client: RpcClient::new_with_commitment(rpc_endpoint.to_string(), commitment_config),
-            darklake_amm: None,
+            darklake_amm: DarklakeAmm {
+                key: Pubkey::default(),
+                pool: Pool::default(),
+                amm_config: AmmConfig::default(),
+                reserve_x_balance: 0,
+                reserve_y_balance: 0,
+                token_x_owner: Pubkey::default(),
+                token_y_owner: Pubkey::default(),
+                token_x_transfer_fee_config: None,
+                token_y_transfer_fee_config: None,
+            },
             settle_paths: ProofCircuitPaths {
                 wasm_path: settle_wasm_path,
                 zkey_path: settle_zkey_path,
@@ -62,6 +78,7 @@ impl DarklakeSDK {
                 zkey_path: cancel_zkey_path,
                 r1cs_path: cancel_r1cs_path,
             },
+            is_devnet,
         }
     }
 
@@ -96,15 +113,15 @@ impl DarklakeSDK {
 
         let (pool_key, _token_x, _token_y) = Self::get_pool_address(_token_in, _token_out);
 
-        if self.darklake_amm.is_none() || self.darklake_amm.as_ref().unwrap().key() != pool_key {
+        if self.darklake_amm.key() != pool_key {
             self.load_pool(_token_x, _token_y).await?;
         }
 
         // update accounts
         self.update_accounts().await?;
 
-        self.darklake_amm.as_ref().unwrap().quote(&QuoteParams {
-            input_mint: token_in,
+        self.darklake_amm.quote(&QuoteParams {
+            input_mint: _token_in,
             amount: amount_in,
             swap_mode: SwapMode::ExactIn,
         })
@@ -145,7 +162,7 @@ impl DarklakeSDK {
 
         let (pool_key, _token_x, _token_y) = Self::get_pool_address(_token_in, _token_out);
 
-        if self.darklake_amm.is_none() || self.darklake_amm.as_ref().unwrap().key() != pool_key {
+        if self.darklake_amm.key() != pool_key {
             self.load_pool(_token_x, _token_y).await?;
         }
 
@@ -155,8 +172,8 @@ impl DarklakeSDK {
         let salt = generate_random_salt();
 
         let swap_params = SwapParams {
-            source_mint: token_in,
-            destination_mint: token_out,
+            source_mint: _token_in,
+            destination_mint: _token_out,
             token_transfer_authority: token_owner,
             in_amount: amount_in, // 1 token (assuming 6 decimals)
             swap_mode: SwapMode::ExactIn,
@@ -164,7 +181,7 @@ impl DarklakeSDK {
             salt,                    // Random salt for order uniqueness
         };
 
-        let swap_instruction = self.swap_ix(swap_params).await?;
+        let swap_instruction = self.swap_ix(swap_params)?;
 
         let compute_budget_ix = ComputeBudgetInstruction::set_compute_unit_limit(300_000);
 
@@ -180,21 +197,11 @@ impl DarklakeSDK {
 
         instructions.push(swap_instruction);
 
-        // let recent_blockhash = self.rpc_client.get_latest_blockhash().await?;
-
-        let message = Message::new(
-            &instructions,
-            Some(&token_owner),
-            // recent_blockhash,
-        );
+        let message = Message::new(&instructions, Some(&token_owner));
 
         let swap_transaction = Transaction::new_unsigned(message);
 
-        let order_key = self
-            .darklake_amm
-            .as_ref()
-            .unwrap()
-            .get_order_pubkey(token_owner)?;
+        let order_key = self.darklake_amm.get_order_pubkey(token_owner)?;
 
         Ok((swap_transaction, order_key, min_amount_out, salt))
     }
@@ -238,8 +245,6 @@ impl DarklakeSDK {
 
         let order = self
             .darklake_amm
-            .as_ref()
-            .unwrap()
             .parse_order_data(&order_data.unwrap().data)?;
 
         // update accounts
@@ -269,7 +274,7 @@ impl DarklakeSDK {
                 .await?,
         };
 
-        let finalize_instruction = self.finalize_ix(finalize_params).await?;
+        let finalize_instruction = self.finalize_ix(finalize_params)?;
 
         let compute_budget_ix = ComputeBudgetInstruction::set_compute_unit_limit(500_000);
 
@@ -299,18 +304,13 @@ impl DarklakeSDK {
         let (pool_key, _token_x, _token_y) =
             Self::get_pool_address(token_x_post_sol, token_y_post_sol);
 
-        let max_amount_x = if _token_x != token_x_post_sol {
-            max_amount_y
+        let (max_amount_x, max_amount_y) = if _token_x != token_x_post_sol {
+            (max_amount_y, max_amount_x)
         } else {
-            max_amount_x
-        };
-        let max_amount_y = if _token_x != token_x_post_sol {
-            max_amount_x
-        } else {
-            max_amount_y
+            (max_amount_x, max_amount_y)
         };
 
-        if self.darklake_amm.is_none() || self.darklake_amm.as_ref().unwrap().key() != pool_key {
+        if self.darklake_amm.key() != pool_key {
             self.load_pool(_token_x, _token_y).await?;
         }
 
@@ -324,7 +324,7 @@ impl DarklakeSDK {
             user,
         };
 
-        let add_liquidity_instruction = self.add_liquidity_ix(add_liquidity_params).await?;
+        let add_liquidity_instruction = self.add_liquidity_ix(add_liquidity_params)?;
 
         let mut instructions = vec![];
         if is_x_sol {
@@ -365,25 +365,20 @@ impl DarklakeSDK {
         let (pool_key, _token_x, _token_y) =
             Self::get_pool_address(token_x_post_sol, token_y_post_sol);
 
-        let min_amount_x = if _token_x != token_x_post_sol {
-            min_amount_y
+        let (min_amount_x, min_amount_y) = if _token_x != token_x_post_sol {
+            (min_amount_y, min_amount_x)
         } else {
-            min_amount_x
-        };
-        let min_amount_y = if _token_x != token_x_post_sol {
-            min_amount_x
-        } else {
-            min_amount_y
+            (min_amount_x, min_amount_y)
         };
 
-        if self.darklake_amm.is_none() || self.darklake_amm.as_ref().unwrap().key() != pool_key {
+        if self.darklake_amm.key() != pool_key {
             self.load_pool(_token_x, _token_y).await?;
         }
 
         // update accounts
         self.update_accounts().await?;
 
-        let (token_x_owner, token_y_owner) = self.darklake_amm.as_ref().unwrap().get_token_owners();
+        let (token_x_owner, token_y_owner) = self.darklake_amm.get_token_owners();
 
         // make sure the user has the token accounts
         let create_token_x_ata_ix =
@@ -409,8 +404,7 @@ impl DarklakeSDK {
             user,
         };
 
-        let remove_liquidity_instruction =
-            self.remove_liquidity_ix(remove_liquidity_params).await?;
+        let remove_liquidity_instruction = self.remove_liquidity_ix(remove_liquidity_params)?;
 
         let mut instructions = vec![
             create_token_x_ata_ix,
@@ -429,6 +423,69 @@ impl DarklakeSDK {
             Transaction::new_unsigned(Message::new(&instructions, Some(&user)));
 
         Ok(remove_liquidity_transaction)
+    }
+
+    pub async fn initialize_pool_tx(
+        &mut self,
+        token_x: Pubkey,
+        token_y: Pubkey,
+        amount_x: u64,
+        amount_y: u64,
+        user: Pubkey,
+    ) -> Result<Transaction> {
+        let is_x_sol = token_x == SOL_MINT;
+        let is_y_sol = token_y == SOL_MINT;
+
+        let token_x_post_sol = if is_x_sol { native_mint::ID } else { token_x };
+        let token_y_post_sol = if is_y_sol { native_mint::ID } else { token_y };
+
+        // used to sort token mints
+        let (_pool_key, _token_x, _token_y) =
+            Self::get_pool_address(token_x_post_sol, token_y_post_sol);
+
+        let (amount_x, amount_y) = if _token_x != token_x_post_sol {
+            (amount_y, amount_x)
+        } else {
+            (amount_x, amount_y)
+        };
+
+        let token_x_account = self.rpc_client.get_account(&_token_x).await?;
+        let token_y_account = self.rpc_client.get_account(&_token_y).await?;
+
+        let initialize_pool_params = InitializePoolParams {
+            user,
+            token_x: _token_x,
+            token_x_program: token_x_account.owner,
+            token_y: _token_y,
+            token_y_program: token_y_account.owner,
+            amount_x,
+            amount_y,
+        };
+
+        let compute_budget_ix: Instruction =
+            ComputeBudgetInstruction::set_compute_unit_limit(500_000);
+
+        let initialize_pool_instruction = self.initialize_pool_ix(initialize_pool_params)?;
+
+        let mut instructions = vec![compute_budget_ix];
+        if is_x_sol {
+            let sol_to_wsol_instructions = get_wrap_sol_to_wsol_instructions(user, amount_x)?;
+            instructions.push(sol_to_wsol_instructions[0].clone());
+            instructions.push(sol_to_wsol_instructions[1].clone());
+            instructions.push(sol_to_wsol_instructions[2].clone());
+        } else if is_y_sol {
+            let sol_to_wsol_instructions = get_wrap_sol_to_wsol_instructions(user, amount_y)?;
+            instructions.push(sol_to_wsol_instructions[0].clone());
+            instructions.push(sol_to_wsol_instructions[1].clone());
+            instructions.push(sol_to_wsol_instructions[2].clone());
+        }
+
+        instructions.push(initialize_pool_instruction);
+
+        let initialize_pool_transaction =
+            Transaction::new_unsigned(Message::new(&instructions, Some(&user)));
+
+        Ok(initialize_pool_transaction)
     }
 
     // MANUAL HANDLING (these are prone to changes in the future)
@@ -458,14 +515,14 @@ impl DarklakeSDK {
             },
         };
 
-        self.darklake_amm = Some(DarklakeAmm::load_pool(&pool_key_and_account)?);
+        self.darklake_amm = DarklakeAmm::load_pool(&pool_key_and_account)?;
 
         // returns sorted token mints
         Ok((pool_key, token_x, token_y))
     }
 
     pub async fn update_accounts(&mut self) -> Result<()> {
-        let accounts_to_update = self.darklake_amm.as_ref().unwrap().get_accounts_to_update();
+        let accounts_to_update = self.darklake_amm.get_accounts_to_update();
         let mut account_map = HashMap::new();
         for account_key in accounts_to_update {
             let account = self.rpc_client.get_account(&account_key).await?;
@@ -477,16 +534,14 @@ impl DarklakeSDK {
                 },
             );
         }
-        self.darklake_amm.as_mut().unwrap().update(&account_map)?;
+        self.darklake_amm.update(&account_map)?;
 
         Ok(())
     }
 
-    pub async fn swap_ix(&mut self, swap_params: SwapParams) -> Result<Instruction> {
+    pub fn swap_ix(&mut self, swap_params: SwapParams) -> Result<Instruction> {
         let swap_and_account_metas = self
             .darklake_amm
-            .as_ref()
-            .unwrap()
             .get_swap_and_account_metas(&swap_params)
             .context("Failed to get swap instruction and account metadata")?;
 
@@ -503,7 +558,7 @@ impl DarklakeSDK {
         user: Pubkey,
         commitment_level: CommitmentLevel,
     ) -> Result<Order> {
-        let order_key = self.darklake_amm.as_ref().unwrap().get_order_pubkey(user)?;
+        let order_key = self.darklake_amm.get_order_pubkey(user)?;
 
         let order_data = self
             .rpc_client
@@ -521,29 +576,21 @@ impl DarklakeSDK {
 
         let order_data = order_data.unwrap();
 
-        let order = self
-            .darklake_amm
-            .as_ref()
-            .unwrap()
-            .parse_order_data(&order_data.data)?;
+        let order = self.darklake_amm.parse_order_data(&order_data.data)?;
 
         Ok(order)
     }
 
-    pub async fn finalize_ix(&mut self, finalize_params: FinalizeParams) -> Result<Instruction> {
-        let finalize_and_account_metas = self
-            .darklake_amm
-            .as_ref()
-            .unwrap()
-            .get_finalize_and_account_metas(
-                &finalize_params,
-                &ProofParams {
-                    paths: self.settle_paths.clone(),
-                },
-                &ProofParams {
-                    paths: self.cancel_paths.clone(),
-                },
-            )?;
+    pub fn finalize_ix(&mut self, finalize_params: FinalizeParams) -> Result<Instruction> {
+        let finalize_and_account_metas = self.darklake_amm.get_finalize_and_account_metas(
+            &finalize_params,
+            &ProofParams {
+                paths: self.settle_paths.clone(),
+            },
+            &ProofParams {
+                paths: self.cancel_paths.clone(),
+            },
+        )?;
 
         Ok(Instruction {
             program_id: DARKLAKE_PROGRAM_ID,
@@ -552,14 +599,12 @@ impl DarklakeSDK {
         })
     }
 
-    pub async fn add_liquidity_ix(
+    pub fn add_liquidity_ix(
         &mut self,
         add_liquidity_params: AddLiquidityParams,
     ) -> Result<Instruction> {
         let add_liquidity_and_account_metas = self
             .darklake_amm
-            .as_ref()
-            .unwrap()
             .get_add_liquidity_and_account_metas(&add_liquidity_params)?;
 
         Ok(Instruction {
@@ -569,20 +614,33 @@ impl DarklakeSDK {
         })
     }
 
-    pub async fn remove_liquidity_ix(
+    pub fn remove_liquidity_ix(
         &mut self,
         remove_liquidity_params: RemoveLiquidityParams,
     ) -> Result<Instruction> {
         let remove_liquidity_and_account_metas = self
             .darklake_amm
-            .as_ref()
-            .unwrap()
             .get_remove_liquidity_and_account_metas(&remove_liquidity_params)?;
 
         Ok(Instruction {
             program_id: DARKLAKE_PROGRAM_ID,
             accounts: remove_liquidity_and_account_metas.account_metas,
             data: remove_liquidity_and_account_metas.data,
+        })
+    }
+
+    pub fn initialize_pool_ix(
+        &mut self,
+        initialize_pool_params: InitializePoolParams,
+    ) -> Result<Instruction> {
+        let initialize_pool_and_account_metas = self
+            .darklake_amm
+            .get_initialize_pool_and_account_metas(&initialize_pool_params, self.is_devnet)?;
+
+        Ok(Instruction {
+            program_id: DARKLAKE_PROGRAM_ID,
+            accounts: initialize_pool_and_account_metas.account_metas,
+            data: initialize_pool_and_account_metas.data,
         })
     }
 
@@ -596,16 +654,7 @@ impl DarklakeSDK {
             (token_mint_y, token_mint_x)
         };
 
-        let pool_key = Pubkey::find_program_address(
-            &[
-                POOL_SEED,
-                AMM_CONFIG.as_ref(),
-                ordered_x.as_ref(),
-                ordered_y.as_ref(),
-            ],
-            &DARKLAKE_PROGRAM_ID,
-        )
-        .0;
+        let pool_key = crate::darklake_amm::DarklakeAmm::get_pool_address(ordered_x, ordered_y);
 
         (pool_key, ordered_x, ordered_y)
     }

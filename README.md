@@ -164,6 +164,33 @@ let signature = rpc_client.send_and_confirm_transaction(&tx_signed)?;
 println!("Remove liquidity signature: {}", signature);
 ```
 
+#### Initializing Pool
+
+```rust
+let token_x = Pubkey::from_str("So11111111111111111111111111111111111111112").unwrap(); // WSOL
+let token_y = Pubkey::from_str("EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v").unwrap(); // USDC
+let user_keypair = Keypair::new(); // Your wallet keypair
+let user_pubkey = user_keypair.pubkey();
+
+let tx = sdk.initialize_pool_tx(
+    token_x,
+    token_y,
+    1_000_000,  // Amount of token X to deposit
+    1_000_000,  // Amount of token Y to deposit
+    user_pubkey, // User public key
+).await?;
+
+let recent_blockhash = rpc_client.get_latest_blockhash().await?;
+let tx_signed = Transaction::new_signed_with_payer(
+    &tx.message.instructions,
+    Some(&user_pubkey),
+    &[&user_keypair],
+    recent_blockhash,
+);
+let signature = rpc_client.send_and_confirm_transaction(&tx_signed)?;
+println!("Initialize pool signature: {}", signature);
+```
+
 ### 2. Instruction Functions (`_ix`) - Core Instructions
 
 These functions return core instructions, allowing you to manage additional calls as needed:
@@ -194,7 +221,7 @@ let swap_params = SwapParams {
 };
 
 // Step 4: Generate swap instruction
-let swap_instruction = sdk.swap_ix(swap_params).await?;
+let swap_instruction = sdk.swap_ix(swap_params)?;
 
 // Step 5: Build and send the swap transaction
 let swap_tx = Transaction::new_signed_with_payer(
@@ -222,7 +249,7 @@ let finalize_params = FinalizeParams {
 };
 
 // Step 8: Generate finalize instruction
-let finalize_instruction = sdk.finalize_ix(finalize_params).await?;
+let finalize_instruction = sdk.finalize_ix(finalize_params)?;
 
 // Step 9: Build and send the finalize transaction
 let finalize_tx = Transaction::new_signed_with_payer(
@@ -252,7 +279,7 @@ let add_liquidity_params = AddLiquidityParams {
 };
 
 // Generate instruction
-let add_liquidity_instruction = sdk.add_liquidity_ix(add_liquidity_params).await?;
+let add_liquidity_instruction = sdk.add_liquidity_ix(add_liquidity_params)?;
 
 // Build and send transaction
 let tx = Transaction::new_signed_with_payer(
@@ -282,11 +309,44 @@ let remove_liquidity_params = RemoveLiquidityParams {
 };
 
 // Generate instruction
-let remove_liquidity_instruction = sdk.remove_liquidity_ix(remove_liquidity_params).await?;
+let remove_liquidity_instruction = sdk.remove_liquidity_ix(remove_liquidity_params)?;
 
 // Build and send transaction
 let tx = Transaction::new_signed_with_payer(
     &[remove_liquidity_instruction],
+    Some(&user_pubkey),
+    &[&user_keypair],
+    recent_blockhash,
+);
+let signature = rpc_client.send_and_confirm_transaction(&tx)?;
+```
+
+#### Initializing Pool with Manual Control
+
+```rust
+use darklake_sdk::InitializePoolParams;
+
+// Get token program IDs (required for pool initialization)
+let token_x_account = rpc_client.get_account(&token_x).await?;
+let token_y_account = rpc_client.get_account(&token_y).await?;
+
+// Create initialize pool parameters
+let initialize_pool_params = InitializePoolParams {
+    user: user_pubkey, // Your wallet's public key
+    token_x,
+    token_x_program: token_x_account.owner,
+    token_y,
+    token_y_program: token_y_account.owner,
+    amount_x: 1_000_000, // Amount of token X to deposit
+    amount_y: 1_000_000, // Amount of token Y to deposit
+};
+
+// Generate instruction
+let initialize_pool_instruction = sdk.initialize_pool_ix(initialize_pool_params)?;
+
+// Build and send transaction
+let tx = Transaction::new_signed_with_payer(
+    &[initialize_pool_instruction],
     Some(&user_pubkey),
     &[&user_keypair],
     recent_blockhash,
@@ -305,6 +365,7 @@ let signature = rpc_client.send_and_confirm_transaction(&tx)?;
 - **`finalize_tx(order_key, unwrap_wsol, min_out, salt, settle_signer)`** - Generate finalize transaction using parameters from swap_tx
 - **`add_liquidity_tx(token_x, token_y, max_amount_x, max_amount_y, amount_lp, user)`** - Generate add liquidity transaction
 - **`remove_liquidity_tx(token_x, token_y, min_amount_x, min_amount_y, amount_lp, user)`** - Generate remove liquidity transaction
+- **`initialize_pool_tx(token_x, token_y, amount_x, amount_y, user)`** - Generate initialize pool transaction
 
 #### Instruction Functions (`_ix`) - Core Instructions
 
@@ -312,6 +373,7 @@ let signature = rpc_client.send_and_confirm_transaction(&tx)?;
 - **`finalize_ix(finalize_params)`** - Generate finalize instruction
 - **`add_liquidity_ix(add_liquidity_params)`** - Generate add liquidity instruction
 - **`remove_liquidity_ix(remove_liquidity_params)`** - Generate remove liquidity instruction
+- **`initialize_pool_ix(initialize_pool_params)`** - Generate initialize pool instruction
 
 #### Internal State Management
 
@@ -366,6 +428,19 @@ pub struct RemoveLiquidityParams {
     pub min_amount_x: u64,
     pub min_amount_y: u64,
     pub user: Pubkey,
+}
+```
+
+#### InitializePoolParams
+```rust
+pub struct InitializePoolParams {
+    pub user: Pubkey,
+    pub token_x: Pubkey,
+    pub token_x_program: Pubkey,
+    pub token_y: Pubkey,
+    pub token_y_program: Pubkey,
+    pub amount_x: u64,
+    pub amount_y: u64,
 }
 ```
 

@@ -292,3 +292,63 @@ impl From<DarklakeAmmRemoveLiquidity> for Vec<AccountMeta> {
         ]
     }
 }
+
+pub(crate) struct DarklakeAmmInitializePool {
+    pub user: Pubkey,
+    pub pool: Pubkey,
+    pub authority: Pubkey,
+    pub amm_config: Pubkey,
+    pub token_mint_x: Pubkey,
+    pub token_mint_y: Pubkey,
+    pub token_mint_wsol: Pubkey,
+    pub token_mint_lp: Pubkey,
+    pub metadata_account: Pubkey, // lp
+    pub metadata_account_x: Pubkey,
+    pub metadata_account_y: Pubkey,
+    pub user_token_account_x: Pubkey,
+    pub user_token_account_y: Pubkey,
+    pub user_token_account_lp: Pubkey,
+    pub pool_token_reserve_x: Pubkey,
+    pub pool_token_reserve_y: Pubkey,
+    pub pool_wsol_reserve: Pubkey,
+    pub create_pool_fee_vault: Pubkey,
+    pub mpl_program: Pubkey,
+    pub system_program: Pubkey,
+    pub rent: Pubkey,
+    pub associated_token_program: Pubkey,
+    pub token_mint_x_program: Pubkey,
+    pub token_mint_y_program: Pubkey,
+    pub token_program: Pubkey,
+}
+
+impl From<DarklakeAmmInitializePool> for Vec<AccountMeta> {
+    fn from(accounts: DarklakeAmmInitializePool) -> Self {
+        vec![
+            AccountMeta::new(accounts.user, true),
+            AccountMeta::new(accounts.pool, false),
+            AccountMeta::new_readonly(accounts.authority, false),
+            AccountMeta::new_readonly(accounts.amm_config, false),
+            AccountMeta::new_readonly(accounts.token_mint_x, false),
+            AccountMeta::new_readonly(accounts.token_mint_y, false),
+            AccountMeta::new_readonly(accounts.token_mint_wsol, false),
+            AccountMeta::new(accounts.token_mint_lp, false),
+            AccountMeta::new(accounts.metadata_account, false),
+            AccountMeta::new_readonly(accounts.metadata_account_x, false),
+            AccountMeta::new_readonly(accounts.metadata_account_y, false),
+            AccountMeta::new(accounts.user_token_account_x, false),
+            AccountMeta::new(accounts.user_token_account_y, false),
+            AccountMeta::new(accounts.user_token_account_lp, false),
+            AccountMeta::new(accounts.pool_token_reserve_x, false),
+            AccountMeta::new(accounts.pool_token_reserve_y, false),
+            AccountMeta::new(accounts.pool_wsol_reserve, false),
+            AccountMeta::new(accounts.create_pool_fee_vault, false),
+            AccountMeta::new_readonly(accounts.mpl_program, false),
+            AccountMeta::new_readonly(accounts.system_program, false),
+            AccountMeta::new_readonly(accounts.rent, false),
+            AccountMeta::new_readonly(accounts.associated_token_program, false),
+            AccountMeta::new_readonly(accounts.token_mint_x_program, false),
+            AccountMeta::new_readonly(accounts.token_mint_y_program, false),
+            AccountMeta::new_readonly(accounts.token_program, false),
+        ]
+    }
+}
