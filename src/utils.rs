@@ -3,7 +3,10 @@ use anchor_spl::token::spl_token::instruction::{close_account, sync_native};
 use anyhow::Result as AnyhowResult;
 use password_hash::rand_core::{OsRng, RngCore};
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
-use solana_sdk::{address_lookup_table::state::AddressLookupTable, clock::Clock, instruction::Instruction, message::AddressLookupTableAccount, pubkey::Pubkey, sysvar::Sysvar};
+use solana_sdk::{
+    address_lookup_table::state::AddressLookupTable, clock::Clock, instruction::Instruction,
+    message::AddressLookupTableAccount, pubkey::Pubkey, sysvar::Sysvar,
+};
 use spl_associated_token_account::get_associated_token_address;
 use spl_token::native_mint;
 use spl_token_2022::extension::transfer_fee::TransferFeeConfig;

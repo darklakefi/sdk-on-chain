@@ -472,9 +472,9 @@ mod amm; // Private module - users should use re-exported types
 mod constants;
 mod darklake_amm;
 mod proof;
+mod reduced_amm_params;
 mod sdk;
 mod utils;
-mod reduced_amm_params;
 
 pub use sdk::DarklakeSDK;
 
@@ -486,4 +486,4 @@ pub use reduced_amm_params::{
 
 pub use amm::SwapMode;
 
-pub use constants::{DEVNET_LOOKUP};
+pub use constants::DEVNET_LOOKUP;

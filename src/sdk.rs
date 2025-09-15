@@ -7,10 +7,17 @@ use crate::{
         ProofCircuitPaths, ProofParams, Quote, QuoteParams, RemoveLiquidityParams, SwapMode,
         SwapParams,
     },
-    constants::{DARKLAKE_PROGRAM_ID, SOL_MINT}, darklake_amm::{AmmConfig, DarklakeAmm, Order, Pool}, proof::proof_generator::find_circuit_path, utils::{
-        convert_string_to_bytes_array, generate_random_salt, get_address_lookup_table, get_close_wsol_instructions, get_wrap_sol_to_wsol_instructions
+    constants::{DARKLAKE_PROGRAM_ID, SOL_MINT},
+    darklake_amm::{AmmConfig, DarklakeAmm, Order, Pool},
+    proof::proof_generator::find_circuit_path,
+    reduced_amm_params::{
+        AddLiquidityParamsIx, FinalizeParamsIx, InitializePoolParamsIx, RemoveLiquidityParamsIx,
+        SwapParamsIx,
     },
-    reduced_amm_params::{AddLiquidityParamsIx, FinalizeParamsIx, InitializePoolParamsIx, RemoveLiquidityParamsIx, SwapParamsIx}
+    utils::{
+        convert_string_to_bytes_array, generate_random_salt, get_address_lookup_table,
+        get_close_wsol_instructions, get_wrap_sol_to_wsol_instructions,
+    },
 };
 use anyhow::{Context, Result};
 use solana_sdk::{
@@ -19,7 +26,7 @@ use solana_sdk::{
     instruction::Instruction,
     message::{v0, VersionedMessage},
     pubkey::Pubkey,
-    transaction::{VersionedTransaction},
+    transaction::VersionedTransaction,
 };
 use std::collections::HashMap;
 use tokio::time::{sleep, Duration};
@@ -59,7 +66,6 @@ impl DarklakeSDK {
         }
 
         let full_label = if label.is_some() {
-
             if label.unwrap().len() > 10 {
                 return Err(anyhow::anyhow!(
                     "Label is too long, must be equal or less than 10 characters"
@@ -67,20 +73,24 @@ impl DarklakeSDK {
             }
 
             let label = label.unwrap();
-            let joined_label =[sdk_label_prefix, label].join(",");
+            let joined_label = [sdk_label_prefix, label].join(",");
             convert_string_to_bytes_array(&joined_label, 21)?
         } else {
             convert_string_to_bytes_array(sdk_label_prefix, 21)?
         };
 
-        let full_label_bytes: [u8; 21] = full_label.try_into()
+        let full_label_bytes: [u8; 21] = full_label
+            .try_into()
             .map_err(|_| anyhow::anyhow!("Failed to convert final label to bytes array"))?;
 
         // ref code
         let ref_code_bytes: Option<[u8; 20]> = if let Some(ref_code) = ref_code {
             let ref_code_vec = convert_string_to_bytes_array(ref_code, 20)?;
-            Some(ref_code_vec.try_into()
-                .map_err(|_| anyhow::anyhow!("Ref code failed to convert to bytes array"))?)
+            Some(
+                ref_code_vec
+                    .try_into()
+                    .map_err(|_| anyhow::anyhow!("Ref code failed to convert to bytes array"))?,
+            )
         } else {
             None
         };
@@ -230,7 +240,8 @@ impl DarklakeSDK {
 
         let mut instructions = vec![compute_budget_ix];
 
-        let address_lookup_table_account = get_address_lookup_table(&self.rpc_client, self.is_devnet).await?;
+        let address_lookup_table_account =
+            get_address_lookup_table(&self.rpc_client, self.is_devnet).await?;
 
         if is_from_sol {
             let sol_to_wsol_instructions =
@@ -334,7 +345,8 @@ impl DarklakeSDK {
 
         let instructions = vec![compute_budget_ix, create_wsol_ata_ix, finalize_instruction];
 
-        let address_lookup_table_account = get_address_lookup_table(&self.rpc_client, self.is_devnet).await?;
+        let address_lookup_table_account =
+            get_address_lookup_table(&self.rpc_client, self.is_devnet).await?;
 
         let recent_blockhash = self.rpc_client.get_latest_blockhash().await?;
         let message_v0 = v0::Message::try_compile(
@@ -348,7 +360,6 @@ impl DarklakeSDK {
             signatures: vec![],
             message: VersionedMessage::V0(message_v0),
         };
-
 
         Ok(finalize_transaction)
     }
@@ -408,7 +419,8 @@ impl DarklakeSDK {
 
         instructions.push(add_liquidity_instruction);
 
-        let address_lookup_table_account = get_address_lookup_table(&self.rpc_client, self.is_devnet).await?;
+        let address_lookup_table_account =
+            get_address_lookup_table(&self.rpc_client, self.is_devnet).await?;
 
         let recent_blockhash = self.rpc_client.get_latest_blockhash().await?;
         let message_v0 = v0::Message::try_compile(
@@ -498,7 +510,8 @@ impl DarklakeSDK {
             instructions.push(close_wsol_instructions[1].clone());
         }
 
-        let address_lookup_table_account = get_address_lookup_table(&self.rpc_client, self.is_devnet).await?;
+        let address_lookup_table_account =
+            get_address_lookup_table(&self.rpc_client, self.is_devnet).await?;
 
         let recent_blockhash = self.rpc_client.get_latest_blockhash().await?;
         let message_v0 = v0::Message::try_compile(
@@ -573,7 +586,8 @@ impl DarklakeSDK {
 
         instructions.push(initialize_pool_instruction);
 
-        let address_lookup_table_account = get_address_lookup_table(&self.rpc_client, self.is_devnet).await?;
+        let address_lookup_table_account =
+            get_address_lookup_table(&self.rpc_client, self.is_devnet).await?;
 
         let recent_blockhash = self.rpc_client.get_latest_blockhash().await?;
         let message_v0 = v0::Message::try_compile(
@@ -672,7 +686,6 @@ impl DarklakeSDK {
     }
 
     pub fn swap_ix(&mut self, swap_params: SwapParamsIx) -> Result<Instruction> {
-
         let swap_params = SwapParams {
             source_mint: swap_params.source_mint,
             destination_mint: swap_params.destination_mint,
@@ -695,7 +708,6 @@ impl DarklakeSDK {
             data: swap_and_account_metas.data,
         })
     }
-
 
     pub fn finalize_ix(&mut self, finalize_params: FinalizeParamsIx) -> Result<Instruction> {
         let finalize_params = FinalizeParams {
@@ -741,7 +753,6 @@ impl DarklakeSDK {
             label: self.label,
             ref_code: self.ref_code,
         };
-
 
         let add_liquidity_and_account_metas = self
             .darklake_amm
