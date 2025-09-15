@@ -10,7 +10,10 @@ use crate::{
     constants::{DARKLAKE_PROGRAM_ID, SOL_MINT},
     darklake_amm::{AmmConfig, DarklakeAmm, Order, Pool},
     proof::proof_generator::find_circuit_path,
-    utils::{generate_random_salt, get_close_wsol_instructions, get_wrap_sol_to_wsol_instructions},
+    utils::{
+        convert_string_to_bytes_array, generate_random_salt, get_close_wsol_instructions,
+        get_wrap_sol_to_wsol_instructions,
+    },
 };
 use anyhow::{Context, Result};
 use solana_sdk::{
@@ -31,18 +34,50 @@ pub struct DarklakeSDK {
     settle_paths: ProofCircuitPaths,
     cancel_paths: ProofCircuitPaths,
     is_devnet: bool, // supports only devnet or mainnet
+    label: [u8; 21],
+    version: String,
 }
 
 impl DarklakeSDK {
     /// Create a new Darklake SDK instance
     pub fn new(
+        label: &str,
         rpc_endpoint: &str,
         commitment_level: CommitmentLevel,
         is_devnet: bool, // only used for pool initialization
-    ) -> Self {
+    ) -> Result<Self> {
         let commitment_config = CommitmentConfig {
             commitment: commitment_level,
         };
+
+        if label.is_empty() {
+            return Err(anyhow::anyhow!("Label is empty"));
+        }
+
+        if label.len() > 10 {
+            return Err(anyhow::anyhow!(
+                "Label is too long, must be equal or less than 10 characters"
+            ));
+        }
+
+        let sdk_label_prefix = b"cv0.1.9,";
+
+        // sanity check for ourselves in-case we exceed prefix length
+        if sdk_label_prefix.len() > 11 {
+            return Err(anyhow::anyhow!(
+                "SDK label prefix is too long, must be equal or less than 11 bytes"
+            ));
+        }
+
+        let label_bytes = label.as_bytes();
+
+        if label_bytes.len() > 10 {
+            return Err(anyhow::anyhow!(
+                "Label is too long, must be equal or less than 10 bytes"
+            ));
+        }
+
+        let full_label: [u8; 21] = [sdk_label_prefix, label_bytes].concat().try_into().unwrap();
 
         let settle_file_prefix = "settle";
         let cancel_file_prefix = "cancel";
@@ -55,7 +90,7 @@ impl DarklakeSDK {
         let cancel_zkey_path = find_circuit_path(&format!("{}_final.zkey", cancel_file_prefix));
         let cancel_r1cs_path = find_circuit_path(&format!("{}.r1cs", cancel_file_prefix));
 
-        Self {
+        Ok(Self {
             rpc_client: RpcClient::new_with_commitment(rpc_endpoint.to_string(), commitment_config),
             darklake_amm: DarklakeAmm {
                 key: Pubkey::default(),
@@ -79,7 +114,14 @@ impl DarklakeSDK {
                 r1cs_path: cancel_r1cs_path,
             },
             is_devnet,
-        }
+            label: full_label,
+            version: env!("CARGO_PKG_VERSION").to_string(),
+        })
+    }
+
+    /// Get the SDK version
+    pub fn version(&self) -> &str {
+        &self.version
     }
 
     /// Get a quote for a swap
@@ -179,6 +221,7 @@ impl DarklakeSDK {
             swap_mode: SwapMode::ExactIn,
             min_out: min_amount_out, // 0.95 tokens out (5% slippage tolerance)
             salt,                    // Random salt for order uniqueness
+            label: Some(self.label),
         };
 
         let swap_instruction = self.swap_ix(swap_params)?;
@@ -213,6 +256,7 @@ impl DarklakeSDK {
         min_out: u64,
         salt: [u8; 8],
         settle_signer: Option<Pubkey>,
+        ref_code: Option<&str>,
     ) -> Result<Transaction> {
         // Retry getting order data 5 times every 5 seconds
         let mut order_data = None;
@@ -250,6 +294,17 @@ impl DarklakeSDK {
         // update accounts
         self.update_accounts().await?;
 
+        let ref_code_bytes = if let Some(ref_code) = ref_code {
+            let ref_code_vec = convert_string_to_bytes_array(ref_code, 20)?;
+            Some(
+                ref_code_vec
+                    .try_into()
+                    .map_err(|_| anyhow::anyhow!("Ref code failed to convert to bytes array"))?,
+            )
+        } else {
+            None
+        };
+
         let settler = settle_signer.unwrap_or(order.trader);
         let create_wsol_ata_ix =
             spl_associated_token_account::instruction::create_associated_token_account_idempotent(
@@ -272,6 +327,8 @@ impl DarklakeSDK {
                 .rpc_client
                 .get_slot_with_commitment(CommitmentConfig::processed())
                 .await?,
+            ref_code: ref_code_bytes,
+            label: Some(self.label),
         };
 
         let finalize_instruction = self.finalize_ix(finalize_params)?;
@@ -294,6 +351,7 @@ impl DarklakeSDK {
         max_amount_y: u64,
         amount_lp: u64,
         user: Pubkey,
+        ref_code: Option<&str>,
     ) -> Result<Transaction> {
         let is_x_sol = token_x == SOL_MINT;
         let is_y_sol = token_y == SOL_MINT;
@@ -317,11 +375,24 @@ impl DarklakeSDK {
         // update accounts
         self.update_accounts().await?;
 
+        let ref_code_bytes = if let Some(ref_code) = ref_code {
+            let ref_code_vec = convert_string_to_bytes_array(ref_code, 20)?;
+            Some(
+                ref_code_vec
+                    .try_into()
+                    .map_err(|_| anyhow::anyhow!("Ref code failed to convert to bytes array"))?,
+            )
+        } else {
+            None
+        };
+
         let add_liquidity_params = AddLiquidityParams {
             amount_lp,
             max_amount_x,
             max_amount_y,
             user,
+            ref_code: ref_code_bytes,
+            label: Some(self.label),
         };
 
         let add_liquidity_instruction = self.add_liquidity_ix(add_liquidity_params)?;
@@ -402,6 +473,7 @@ impl DarklakeSDK {
             min_amount_x,
             min_amount_y,
             user,
+            label: Some(self.label),
         };
 
         let remove_liquidity_instruction = self.remove_liquidity_ix(remove_liquidity_params)?;
@@ -460,6 +532,7 @@ impl DarklakeSDK {
             token_y_program: token_y_account.owner,
             amount_x,
             amount_y,
+            label: Some(self.label),
         };
 
         let compute_budget_ix: Instruction =

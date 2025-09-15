@@ -280,6 +280,7 @@ impl Amm for DarklakeAmm {
             token_transfer_authority,
             salt,
             min_out,
+            label,
             ..
         } = swap_params;
 
@@ -324,6 +325,7 @@ impl Amm for DarklakeAmm {
                 amount_in: swap_params.in_amount,
                 is_swap_x_to_y,
                 c_min: commitment,
+                label: *label,
             },
             data,
             account_metas: DarklakeAmmSwap {
@@ -394,6 +396,8 @@ impl Amm for DarklakeAmm {
             commitment,
             deadline,
             current_slot,
+            ref_code,
+            label,
         } = settle_params;
 
         if *current_slot > *deadline {
@@ -472,6 +476,8 @@ impl Amm for DarklakeAmm {
                 proof_c: solana_proof.proof_c,
                 public_signals: public_inputs_arr,
                 unwrap_wsol: *unwrap_wsol,
+                ref_code: *ref_code,
+                label: *label,
             },
             data,
             account_metas: DarklakeAmmSettle {
@@ -516,6 +522,7 @@ impl Amm for DarklakeAmm {
             commitment,
             deadline,
             current_slot,
+            label,
         } = cancel_params;
 
         if *current_slot > *deadline {
@@ -592,6 +599,7 @@ impl Amm for DarklakeAmm {
                 proof_b: solana_proof.proof_b,
                 proof_c: solana_proof.proof_c,
                 public_signals: public_inputs_arr,
+                label: *label,
             },
             data,
             account_metas: DarklakeAmmCancel {
@@ -630,6 +638,7 @@ impl Amm for DarklakeAmm {
             order_owner,
             deadline,
             current_slot,
+            label,
         } = slash_params;
 
         if *current_slot <= *deadline {
@@ -661,7 +670,7 @@ impl Amm for DarklakeAmm {
 
         Ok(SlashAndAccountMetas {
             discriminator,
-            slash: DarklakeAmmSlashParams {},
+            slash: DarklakeAmmSlashParams { label: *label },
             data,
             account_metas: DarklakeAmmSlash {
                 caller: *settle_signer,
@@ -705,6 +714,8 @@ impl Amm for DarklakeAmm {
             commitment,
             deadline,
             current_slot,
+            ref_code,
+            label,
         } = finalize_params;
 
         // check if settle or cancel or slash
@@ -718,6 +729,7 @@ impl Amm for DarklakeAmm {
                     order_owner: *order_owner,
                     deadline: *deadline,
                     current_slot: *current_slot,
+                    label: *label,
                 })?,
             ));
         } else if is_settle {
@@ -733,6 +745,8 @@ impl Amm for DarklakeAmm {
                         commitment: *commitment,
                         deadline: *deadline,
                         current_slot: *current_slot,
+                        ref_code: *ref_code,
+                        label: *label,
                     },
                     &settle_proof_params,
                 )?,
@@ -749,6 +763,7 @@ impl Amm for DarklakeAmm {
                         commitment: *commitment,
                         deadline: *deadline,
                         current_slot: *current_slot,
+                        label: *label,
                     },
                     &cancel_proof_params,
                 )?,
@@ -765,6 +780,8 @@ impl Amm for DarklakeAmm {
             max_amount_x,
             max_amount_y,
             user,
+            ref_code,
+            label,
         } = add_liquidity_params;
 
         let authority = AUTHORITY.key();
@@ -792,6 +809,8 @@ impl Amm for DarklakeAmm {
                 amount_lp: *amount_lp,
                 max_amount_x: *max_amount_x,
                 max_amount_y: *max_amount_y,
+                ref_code: *ref_code,
+                label: *label,
             },
             data,
             account_metas: DarklakeAmmAddLiquidity {
@@ -826,6 +845,7 @@ impl Amm for DarklakeAmm {
             min_amount_x,
             min_amount_y,
             user,
+            label,
         } = remove_liquidity_params;
 
         let authority = AUTHORITY.key();
@@ -853,6 +873,7 @@ impl Amm for DarklakeAmm {
                 amount_lp: *amount_lp,
                 min_amount_x: *min_amount_x,
                 min_amount_y: *min_amount_y,
+                label: *label,
             },
             data,
             account_metas: DarklakeAmmRemoveLiquidity {
@@ -891,6 +912,7 @@ impl Amm for DarklakeAmm {
             token_y_program,
             amount_x,
             amount_y,
+            label,
         } = initialize_pool_params;
 
         let authority = AUTHORITY.key();
@@ -921,6 +943,7 @@ impl Amm for DarklakeAmm {
             initialize_pool: DarklakeAmmInitializePoolParams {
                 amount_x: *amount_x,
                 amount_y: *amount_y,
+                label: *label,
             },
             data,
             account_metas: DarklakeAmmInitializePool {

@@ -144,6 +144,7 @@ pub struct SwapParams {
     pub swap_mode: SwapMode,
     pub min_out: u64,
     pub salt: [u8; 8],
+    pub label: Option<[u8; 21]>,
 }
 
 /// Settle parameters
@@ -158,6 +159,8 @@ pub struct SettleParams {
     pub commitment: [u8; 32],
     pub deadline: u64,
     pub current_slot: u64,
+    pub ref_code: Option<[u8; 20]>,
+    pub label: Option<[u8; 21]>,
 }
 
 /// Cancel parameters
@@ -171,6 +174,7 @@ pub struct CancelParams {
     pub commitment: [u8; 32],
     pub deadline: u64,
     pub current_slot: u64,
+    pub label: Option<[u8; 21]>,
 }
 
 /// Slash parameters
@@ -180,6 +184,7 @@ pub struct SlashParams {
     pub order_owner: Pubkey,
     pub deadline: u64,
     pub current_slot: u64,
+    pub label: Option<[u8; 21]>,
 }
 
 /// Add liquidity parameters
@@ -189,6 +194,8 @@ pub struct AddLiquidityParams {
     pub amount_lp: u64, // lp to mint
     pub max_amount_x: u64,
     pub max_amount_y: u64,
+    pub ref_code: Option<[u8; 20]>,
+    pub label: Option<[u8; 21]>,
 }
 
 /// Initialize pool parameters
@@ -201,6 +208,7 @@ pub struct InitializePoolParams {
     pub token_y_program: Pubkey,
     pub amount_x: u64,
     pub amount_y: u64,
+    pub label: Option<[u8; 21]>,
 }
 
 /// Remove liquidity parameters
@@ -210,6 +218,7 @@ pub struct RemoveLiquidityParams {
     pub amount_lp: u64, // lp to burn
     pub min_amount_x: u64,
     pub min_amount_y: u64,
+    pub label: Option<[u8; 21]>,
 }
 
 /// Finalize parameters
@@ -224,6 +233,8 @@ pub struct FinalizeParams {
     pub commitment: [u8; 32],
     pub deadline: u64,
     pub current_slot: u64,
+    pub ref_code: Option<[u8; 20]>,
+    pub label: Option<[u8; 21]>,
 }
 
 /// Swap result with account metadata
@@ -323,6 +334,7 @@ pub struct DarklakeAmmSwapParams {
     pub amount_in: u64,
     pub is_swap_x_to_y: bool,
     pub c_min: [u8; 32],
+    pub label: Option<[u8; 21]>,
 }
 
 /// Darklake AMM settle parameters
@@ -333,6 +345,8 @@ pub struct DarklakeAmmSettleParams {
     pub proof_c: [u8; 64],
     pub public_signals: [[u8; 32]; 2],
     pub unwrap_wsol: bool,
+    pub ref_code: Option<[u8; 20]>,
+    pub label: Option<[u8; 21]>,
 }
 
 /// Darklake AMM settle parameters
@@ -342,17 +356,21 @@ pub struct DarklakeAmmCancelParams {
     pub proof_b: [u8; 128],
     pub proof_c: [u8; 64],
     pub public_signals: [[u8; 32]; 2],
+    pub label: Option<[u8; 21]>,
 }
 
 /// Darklake AMM slash parameters
 #[derive(Debug, Clone)]
-pub struct DarklakeAmmSlashParams {}
+pub struct DarklakeAmmSlashParams {
+    pub label: Option<[u8; 21]>,
+}
 
 /// Darklake AMM initialize pool parameters
 #[derive(Debug, Clone)]
 pub struct DarklakeAmmInitializePoolParams {
     pub amount_x: u64,
     pub amount_y: u64,
+    pub label: Option<[u8; 21]>,
 }
 
 /// Darklake AMM add liquidity parameters
@@ -361,6 +379,8 @@ pub struct DarklakeAmmAddLiquidityParams {
     pub amount_lp: u64,
     pub max_amount_x: u64,
     pub max_amount_y: u64,
+    pub ref_code: Option<[u8; 20]>,
+    pub label: Option<[u8; 21]>,
 }
 
 /// Darklake AMM remove liquidity parameters
@@ -369,6 +389,7 @@ pub struct DarklakeAmmRemoveLiquidityParams {
     pub amount_lp: u64,
     pub min_amount_x: u64,
     pub min_amount_y: u64,
+    pub label: Option<[u8; 21]>,
 }
 
 /// Keyed account for AMM operations

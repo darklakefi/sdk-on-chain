@@ -1,5 +1,6 @@
 use anchor_lang::{solana_program::example_mocks::solana_sdk::system_instruction, Result};
 use anchor_spl::token::spl_token::instruction::{close_account, sync_native};
+use anyhow::Result as AnyhowResult;
 use password_hash::rand_core::{OsRng, RngCore};
 use solana_sdk::{clock::Clock, instruction::Instruction, pubkey::Pubkey, sysvar::Sysvar};
 use spl_associated_token_account::get_associated_token_address;
@@ -90,4 +91,17 @@ pub(crate) fn get_close_wsol_instructions(payer: Pubkey) -> Result<Vec<Instructi
     instructions.push(close_account_ix);
 
     Ok(instructions)
+}
+
+pub fn convert_string_to_bytes_array(s: &str, length: usize) -> AnyhowResult<Vec<u8>> {
+    let mut bytes = s.to_string().into_bytes();
+    if bytes.len() > length {
+        return Err(anyhow::anyhow!(
+            "String length must be less than or equal to {}.",
+            length
+        ));
+    }
+
+    bytes.resize(length, 0u8);
+    Ok(bytes)
 }
