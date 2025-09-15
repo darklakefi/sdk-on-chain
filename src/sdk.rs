@@ -7,21 +7,19 @@ use crate::{
         ProofCircuitPaths, ProofParams, Quote, QuoteParams, RemoveLiquidityParams, SwapMode,
         SwapParams,
     },
-    constants::{DARKLAKE_PROGRAM_ID, SOL_MINT},
-    darklake_amm::{AmmConfig, DarklakeAmm, Order, Pool},
-    proof::proof_generator::find_circuit_path,
-    utils::{
+    constants::{DARKLAKE_PROGRAM_ID, SOL_MINT}, darklake_amm::{AmmConfig, DarklakeAmm, Order, Pool}, proof::proof_generator::find_circuit_path, utils::{
         convert_string_to_bytes_array, generate_random_salt, get_address_lookup_table, get_close_wsol_instructions, get_wrap_sol_to_wsol_instructions
     },
+    reduced_amm_params::{AddLiquidityParamsIx, FinalizeParamsIx, InitializePoolParamsIx, RemoveLiquidityParamsIx, SwapParamsIx}
 };
 use anyhow::{Context, Result};
 use solana_sdk::{
     commitment_config::{CommitmentConfig, CommitmentLevel},
     compute_budget::ComputeBudgetInstruction,
     instruction::Instruction,
-    message::{v0, Message, VersionedMessage},
+    message::{v0, VersionedMessage},
     pubkey::Pubkey,
-    transaction::{Transaction, VersionedTransaction},
+    transaction::{VersionedTransaction},
 };
 use std::collections::HashMap;
 use tokio::time::{sleep, Duration};
@@ -216,7 +214,7 @@ impl DarklakeSDK {
 
         let salt = generate_random_salt();
 
-        let swap_params = SwapParams {
+        let swap_params = SwapParamsIx {
             source_mint: _token_in,
             destination_mint: _token_out,
             token_transfer_authority: token_owner,
@@ -224,7 +222,6 @@ impl DarklakeSDK {
             swap_mode: SwapMode::ExactIn,
             min_out: min_amount_out, // 0.95 tokens out (5% slippage tolerance)
             salt,                    // Random salt for order uniqueness
-            label: self.label,
         };
 
         let swap_instruction = self.swap_ix(swap_params)?;
@@ -316,7 +313,7 @@ impl DarklakeSDK {
                 &spl_token::ID,
             );
 
-        let finalize_params = FinalizeParams {
+        let finalize_params = FinalizeParamsIx {
             settle_signer: settler,    // who settles the order
             order_owner: order.trader, // who owns the order
             unwrap_wsol,               // Set to true if output is wrapped SOL
@@ -329,8 +326,6 @@ impl DarklakeSDK {
                 .rpc_client
                 .get_slot_with_commitment(CommitmentConfig::processed())
                 .await?,
-            ref_code: self.ref_code,
-            label: self.label,
         };
 
         let finalize_instruction = self.finalize_ix(finalize_params)?;
@@ -389,13 +384,11 @@ impl DarklakeSDK {
         // update accounts
         self.update_accounts().await?;
 
-        let add_liquidity_params = AddLiquidityParams {
+        let add_liquidity_params = AddLiquidityParamsIx {
             amount_lp,
             max_amount_x,
             max_amount_y,
             user,
-            ref_code: self.ref_code,
-            label: self.label,
         };
 
         let add_liquidity_instruction = self.add_liquidity_ix(add_liquidity_params)?;
@@ -483,12 +476,11 @@ impl DarklakeSDK {
                 &token_y_owner,
             );
 
-        let remove_liquidity_params = RemoveLiquidityParams {
+        let remove_liquidity_params = RemoveLiquidityParamsIx {
             amount_lp,
             min_amount_x,
             min_amount_y,
             user,
-            label: self.label,
         };
 
         let remove_liquidity_instruction = self.remove_liquidity_ix(remove_liquidity_params)?;
@@ -551,7 +543,7 @@ impl DarklakeSDK {
         let token_x_account = self.rpc_client.get_account(&_token_x).await?;
         let token_y_account = self.rpc_client.get_account(&_token_y).await?;
 
-        let initialize_pool_params = InitializePoolParams {
+        let initialize_pool_params = InitializePoolParamsIx {
             user,
             token_x: _token_x,
             token_x_program: token_x_account.owner,
@@ -559,7 +551,6 @@ impl DarklakeSDK {
             token_y_program: token_y_account.owner,
             amount_x,
             amount_y,
-            label: self.label,
         };
 
         let compute_budget_ix: Instruction =
@@ -651,19 +642,6 @@ impl DarklakeSDK {
         Ok(())
     }
 
-    pub fn swap_ix(&mut self, swap_params: SwapParams) -> Result<Instruction> {
-        let swap_and_account_metas = self
-            .darklake_amm
-            .get_swap_and_account_metas(&swap_params)
-            .context("Failed to get swap instruction and account metadata")?;
-
-        Ok(Instruction {
-            program_id: DARKLAKE_PROGRAM_ID,
-            accounts: swap_and_account_metas.account_metas,
-            data: swap_and_account_metas.data,
-        })
-    }
-
     // does not require load_pool or update_accounts is a standalone function after new() is called
     pub async fn get_order(
         &mut self,
@@ -693,7 +671,47 @@ impl DarklakeSDK {
         Ok(order)
     }
 
-    pub fn finalize_ix(&mut self, finalize_params: FinalizeParams) -> Result<Instruction> {
+    pub fn swap_ix(&mut self, swap_params: SwapParamsIx) -> Result<Instruction> {
+
+        let swap_params = SwapParams {
+            source_mint: swap_params.source_mint,
+            destination_mint: swap_params.destination_mint,
+            token_transfer_authority: swap_params.token_transfer_authority,
+            in_amount: swap_params.in_amount,
+            swap_mode: swap_params.swap_mode,
+            min_out: swap_params.min_out,
+            salt: swap_params.salt,
+            label: self.label,
+        };
+
+        let swap_and_account_metas = self
+            .darklake_amm
+            .get_swap_and_account_metas(&swap_params)
+            .context("Failed to get swap instruction and account metadata")?;
+
+        Ok(Instruction {
+            program_id: DARKLAKE_PROGRAM_ID,
+            accounts: swap_and_account_metas.account_metas,
+            data: swap_and_account_metas.data,
+        })
+    }
+
+
+    pub fn finalize_ix(&mut self, finalize_params: FinalizeParamsIx) -> Result<Instruction> {
+        let finalize_params = FinalizeParams {
+            settle_signer: finalize_params.settle_signer,
+            order_owner: finalize_params.order_owner,
+            unwrap_wsol: finalize_params.unwrap_wsol,
+            min_out: finalize_params.min_out,
+            salt: finalize_params.salt,
+            output: finalize_params.output,
+            commitment: finalize_params.commitment,
+            deadline: finalize_params.deadline,
+            current_slot: finalize_params.current_slot,
+            label: self.label,
+            ref_code: self.ref_code,
+        };
+
         let finalize_and_account_metas = self.darklake_amm.get_finalize_and_account_metas(
             &finalize_params,
             &ProofParams {
@@ -713,8 +731,18 @@ impl DarklakeSDK {
 
     pub fn add_liquidity_ix(
         &mut self,
-        add_liquidity_params: AddLiquidityParams,
+        add_liquidity_params: AddLiquidityParamsIx,
     ) -> Result<Instruction> {
+        let add_liquidity_params = AddLiquidityParams {
+            amount_lp: add_liquidity_params.amount_lp,
+            max_amount_x: add_liquidity_params.max_amount_x,
+            max_amount_y: add_liquidity_params.max_amount_y,
+            user: add_liquidity_params.user,
+            label: self.label,
+            ref_code: self.ref_code,
+        };
+
+
         let add_liquidity_and_account_metas = self
             .darklake_amm
             .get_add_liquidity_and_account_metas(&add_liquidity_params)?;
@@ -728,8 +756,16 @@ impl DarklakeSDK {
 
     pub fn remove_liquidity_ix(
         &mut self,
-        remove_liquidity_params: RemoveLiquidityParams,
+        remove_liquidity_params: RemoveLiquidityParamsIx,
     ) -> Result<Instruction> {
+        let remove_liquidity_params = RemoveLiquidityParams {
+            amount_lp: remove_liquidity_params.amount_lp,
+            min_amount_x: remove_liquidity_params.min_amount_x,
+            min_amount_y: remove_liquidity_params.min_amount_y,
+            user: remove_liquidity_params.user,
+            label: self.label,
+        };
+
         let remove_liquidity_and_account_metas = self
             .darklake_amm
             .get_remove_liquidity_and_account_metas(&remove_liquidity_params)?;
@@ -743,8 +779,19 @@ impl DarklakeSDK {
 
     pub fn initialize_pool_ix(
         &mut self,
-        initialize_pool_params: InitializePoolParams,
+        initialize_pool_params: InitializePoolParamsIx,
     ) -> Result<Instruction> {
+        let initialize_pool_params = InitializePoolParams {
+            user: initialize_pool_params.user,
+            token_x: initialize_pool_params.token_x,
+            token_x_program: initialize_pool_params.token_x_program,
+            token_y: initialize_pool_params.token_y,
+            token_y_program: initialize_pool_params.token_y_program,
+            amount_x: initialize_pool_params.amount_x,
+            amount_y: initialize_pool_params.amount_y,
+            label: self.label,
+        };
+
         let initialize_pool_and_account_metas = self
             .darklake_amm
             .get_initialize_pool_and_account_metas(&initialize_pool_params, self.is_devnet)?;

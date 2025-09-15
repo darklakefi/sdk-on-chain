@@ -474,13 +474,16 @@ mod darklake_amm;
 mod proof;
 mod sdk;
 mod utils;
+mod reduced_amm_params;
 
 pub use sdk::DarklakeSDK;
 
 // Re-export commonly used AMM types for easier access
-pub use amm::{
-    AddLiquidityParams, FinalizeParams, InitializePoolParams, RemoveLiquidityParams, SwapMode,
-    SwapParams,
+pub use reduced_amm_params::{
+    AddLiquidityParamsIx, FinalizeParamsIx, InitializePoolParamsIx, RemoveLiquidityParamsIx,
+    SwapParamsIx,
 };
+
+pub use amm::SwapMode;
 
 pub use constants::{DEVNET_LOOKUP};
