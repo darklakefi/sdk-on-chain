@@ -24,6 +24,8 @@ pub const ORDER_WSOL_SEED: &[u8] = b"order_wsol";
 pub const METADATA_SEED: &[u8] = b"metadata";
 pub const POOL_RESERVE_SEED: &[u8] = b"pool_reserve";
 
+pub const DEVNET_LOOKUP: Pubkey = pubkey!("fUT5cRYT7RTS4kSq7ZpPwqaH7E68soubbutFxYHeNjo");
+
 lazy_static! {
     pub static ref AMM_CONFIG: Pubkey = Pubkey::find_program_address(
         &[AMM_CONFIG_SEED, &0u32.to_le_bytes()],

@@ -2,10 +2,13 @@ use anchor_lang::{solana_program::example_mocks::solana_sdk::system_instruction,
 use anchor_spl::token::spl_token::instruction::{close_account, sync_native};
 use anyhow::Result as AnyhowResult;
 use password_hash::rand_core::{OsRng, RngCore};
-use solana_sdk::{clock::Clock, instruction::Instruction, pubkey::Pubkey, sysvar::Sysvar};
+use solana_rpc_client::nonblocking::rpc_client::RpcClient;
+use solana_sdk::{address_lookup_table::state::AddressLookupTable, clock::Clock, instruction::Instruction, message::AddressLookupTableAccount, pubkey::Pubkey, sysvar::Sysvar};
 use spl_associated_token_account::get_associated_token_address;
 use spl_token::native_mint;
 use spl_token_2022::extension::transfer_fee::TransferFeeConfig;
+
+use crate::constants::DEVNET_LOOKUP;
 
 pub(crate) fn get_transfer_fee(
     transfer_fee_config: Option<TransferFeeConfig>,
@@ -104,4 +107,30 @@ pub fn convert_string_to_bytes_array(s: &str, length: usize) -> AnyhowResult<Vec
 
     bytes.resize(length, 0u8);
     Ok(bytes)
+}
+
+pub async fn get_address_lookup_table(
+    rpc_client: &RpcClient,
+    is_devnet: bool,
+) -> AnyhowResult<AddressLookupTableAccount> {
+    let alt_pubkey = if is_devnet {
+        DEVNET_LOOKUP
+    } else {
+        return Err(anyhow::anyhow!("Address lookup table not found"));
+    };
+
+    // Fetch the address lookup table
+    let alt_account = rpc_client
+        .get_account(&alt_pubkey)
+        .await
+        .map_err(|e| anyhow::anyhow!("Failed to get address lookup table: {}", e))?;
+
+    let table = AddressLookupTable::deserialize(&alt_account.data)?;
+
+    let address_lookup_table = AddressLookupTableAccount {
+        key: alt_pubkey,
+        addresses: table.addresses.to_vec(),
+    };
+
+    Ok(address_lookup_table)
 }

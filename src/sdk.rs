@@ -11,8 +11,7 @@ use crate::{
     darklake_amm::{AmmConfig, DarklakeAmm, Order, Pool},
     proof::proof_generator::find_circuit_path,
     utils::{
-        convert_string_to_bytes_array, generate_random_salt, get_close_wsol_instructions,
-        get_wrap_sol_to_wsol_instructions,
+        convert_string_to_bytes_array, generate_random_salt, get_address_lookup_table, get_close_wsol_instructions, get_wrap_sol_to_wsol_instructions
     },
 };
 use anyhow::{Context, Result};
@@ -20,9 +19,9 @@ use solana_sdk::{
     commitment_config::{CommitmentConfig, CommitmentLevel},
     compute_budget::ComputeBudgetInstruction,
     instruction::Instruction,
-    message::Message,
+    message::{v0, Message, VersionedMessage},
     pubkey::Pubkey,
-    transaction::Transaction,
+    transaction::{Transaction, VersionedTransaction},
 };
 use std::collections::HashMap;
 use tokio::time::{sleep, Duration};
@@ -34,50 +33,59 @@ pub struct DarklakeSDK {
     settle_paths: ProofCircuitPaths,
     cancel_paths: ProofCircuitPaths,
     is_devnet: bool, // supports only devnet or mainnet
-    label: [u8; 21],
-    version: String,
+    label: Option<[u8; 21]>,
+    ref_code: Option<[u8; 20]>,
 }
 
 impl DarklakeSDK {
     /// Create a new Darklake SDK instance
     pub fn new(
-        label: &str,
         rpc_endpoint: &str,
         commitment_level: CommitmentLevel,
         is_devnet: bool, // only used for pool initialization
+        label: Option<&str>,
+        ref_code: Option<&str>,
     ) -> Result<Self> {
         let commitment_config = CommitmentConfig {
             commitment: commitment_level,
         };
 
-        if label.is_empty() {
-            return Err(anyhow::anyhow!("Label is empty"));
-        }
-
-        if label.len() > 10 {
-            return Err(anyhow::anyhow!(
-                "Label is too long, must be equal or less than 10 characters"
-            ));
-        }
-
-        let sdk_label_prefix = b"cv0.1.9,";
+        // label
+        let sdk_label_prefix = "cv0.1.9";
 
         // sanity check for ourselves in-case we exceed prefix length
-        if sdk_label_prefix.len() > 11 {
+        if sdk_label_prefix.len() > 10 {
             return Err(anyhow::anyhow!(
-                "SDK label prefix is too long, must be equal or less than 11 bytes"
+                "SDK label prefix is too long, must be equal or less than 10 bytes"
             ));
         }
 
-        let label_bytes = label.as_bytes();
+        let full_label = if label.is_some() {
 
-        if label_bytes.len() > 10 {
-            return Err(anyhow::anyhow!(
-                "Label is too long, must be equal or less than 10 bytes"
-            ));
-        }
+            if label.unwrap().len() > 10 {
+                return Err(anyhow::anyhow!(
+                    "Label is too long, must be equal or less than 10 characters"
+                ));
+            }
 
-        let full_label: [u8; 21] = [sdk_label_prefix, label_bytes].concat().try_into().unwrap();
+            let label = label.unwrap();
+            let joined_label =[sdk_label_prefix, label].join(",");
+            convert_string_to_bytes_array(&joined_label, 21)?
+        } else {
+            convert_string_to_bytes_array(sdk_label_prefix, 21)?
+        };
+
+        let full_label_bytes: [u8; 21] = full_label.try_into()
+            .map_err(|_| anyhow::anyhow!("Failed to convert final label to bytes array"))?;
+
+        // ref code
+        let ref_code_bytes: Option<[u8; 20]> = if let Some(ref_code) = ref_code {
+            let ref_code_vec = convert_string_to_bytes_array(ref_code, 20)?;
+            Some(ref_code_vec.try_into()
+                .map_err(|_| anyhow::anyhow!("Ref code failed to convert to bytes array"))?)
+        } else {
+            None
+        };
 
         let settle_file_prefix = "settle";
         let cancel_file_prefix = "cancel";
@@ -114,14 +122,9 @@ impl DarklakeSDK {
                 r1cs_path: cancel_r1cs_path,
             },
             is_devnet,
-            label: full_label,
-            version: env!("CARGO_PKG_VERSION").to_string(),
+            label: Some(full_label_bytes),
+            ref_code: ref_code_bytes,
         })
-    }
-
-    /// Get the SDK version
-    pub fn version(&self) -> &str {
-        &self.version
     }
 
     /// Get a quote for a swap
@@ -187,7 +190,7 @@ impl DarklakeSDK {
         amount_in: u64,
         min_amount_out: u64,
         token_owner: Pubkey,
-    ) -> Result<(Transaction, Pubkey, u64, [u8; 8])> {
+    ) -> Result<(VersionedTransaction, Pubkey, u64, [u8; 8])> {
         let is_from_sol = token_in == SOL_MINT;
         let is_to_sol = token_out == SOL_MINT;
 
@@ -221,7 +224,7 @@ impl DarklakeSDK {
             swap_mode: SwapMode::ExactIn,
             min_out: min_amount_out, // 0.95 tokens out (5% slippage tolerance)
             salt,                    // Random salt for order uniqueness
-            label: Some(self.label),
+            label: self.label,
         };
 
         let swap_instruction = self.swap_ix(swap_params)?;
@@ -229,6 +232,8 @@ impl DarklakeSDK {
         let compute_budget_ix = ComputeBudgetInstruction::set_compute_unit_limit(300_000);
 
         let mut instructions = vec![compute_budget_ix];
+
+        let address_lookup_table_account = get_address_lookup_table(&self.rpc_client, self.is_devnet).await?;
 
         if is_from_sol {
             let sol_to_wsol_instructions =
@@ -240,9 +245,18 @@ impl DarklakeSDK {
 
         instructions.push(swap_instruction);
 
-        let message = Message::new(&instructions, Some(&token_owner));
+        let recent_blockhash = self.rpc_client.get_latest_blockhash().await?;
+        let message_v0 = v0::Message::try_compile(
+            &token_owner,
+            &instructions,
+            &[address_lookup_table_account],
+            recent_blockhash,
+        )?;
 
-        let swap_transaction = Transaction::new_unsigned(message);
+        let swap_transaction = VersionedTransaction {
+            signatures: vec![],
+            message: VersionedMessage::V0(message_v0),
+        };
 
         let order_key = self.darklake_amm.get_order_pubkey(token_owner)?;
 
@@ -256,8 +270,7 @@ impl DarklakeSDK {
         min_out: u64,
         salt: [u8; 8],
         settle_signer: Option<Pubkey>,
-        ref_code: Option<&str>,
-    ) -> Result<Transaction> {
+    ) -> Result<VersionedTransaction> {
         // Retry getting order data 5 times every 5 seconds
         let mut order_data = None;
         for attempt in 1..=5 {
@@ -294,17 +307,6 @@ impl DarklakeSDK {
         // update accounts
         self.update_accounts().await?;
 
-        let ref_code_bytes = if let Some(ref_code) = ref_code {
-            let ref_code_vec = convert_string_to_bytes_array(ref_code, 20)?;
-            Some(
-                ref_code_vec
-                    .try_into()
-                    .map_err(|_| anyhow::anyhow!("Ref code failed to convert to bytes array"))?,
-            )
-        } else {
-            None
-        };
-
         let settler = settle_signer.unwrap_or(order.trader);
         let create_wsol_ata_ix =
             spl_associated_token_account::instruction::create_associated_token_account_idempotent(
@@ -327,8 +329,8 @@ impl DarklakeSDK {
                 .rpc_client
                 .get_slot_with_commitment(CommitmentConfig::processed())
                 .await?,
-            ref_code: ref_code_bytes,
-            label: Some(self.label),
+            ref_code: self.ref_code,
+            label: self.label,
         };
 
         let finalize_instruction = self.finalize_ix(finalize_params)?;
@@ -337,8 +339,21 @@ impl DarklakeSDK {
 
         let instructions = vec![compute_budget_ix, create_wsol_ata_ix, finalize_instruction];
 
-        let finalize_transaction =
-            Transaction::new_unsigned(Message::new(&instructions, Some(&settler)));
+        let address_lookup_table_account = get_address_lookup_table(&self.rpc_client, self.is_devnet).await?;
+
+        let recent_blockhash = self.rpc_client.get_latest_blockhash().await?;
+        let message_v0 = v0::Message::try_compile(
+            &settler,
+            &instructions,
+            &[address_lookup_table_account],
+            recent_blockhash,
+        )?;
+
+        let finalize_transaction = VersionedTransaction {
+            signatures: vec![],
+            message: VersionedMessage::V0(message_v0),
+        };
+
 
         Ok(finalize_transaction)
     }
@@ -351,8 +366,7 @@ impl DarklakeSDK {
         max_amount_y: u64,
         amount_lp: u64,
         user: Pubkey,
-        ref_code: Option<&str>,
-    ) -> Result<Transaction> {
+    ) -> Result<VersionedTransaction> {
         let is_x_sol = token_x == SOL_MINT;
         let is_y_sol = token_y == SOL_MINT;
 
@@ -375,24 +389,13 @@ impl DarklakeSDK {
         // update accounts
         self.update_accounts().await?;
 
-        let ref_code_bytes = if let Some(ref_code) = ref_code {
-            let ref_code_vec = convert_string_to_bytes_array(ref_code, 20)?;
-            Some(
-                ref_code_vec
-                    .try_into()
-                    .map_err(|_| anyhow::anyhow!("Ref code failed to convert to bytes array"))?,
-            )
-        } else {
-            None
-        };
-
         let add_liquidity_params = AddLiquidityParams {
             amount_lp,
             max_amount_x,
             max_amount_y,
             user,
-            ref_code: ref_code_bytes,
-            label: Some(self.label),
+            ref_code: self.ref_code,
+            label: self.label,
         };
 
         let add_liquidity_instruction = self.add_liquidity_ix(add_liquidity_params)?;
@@ -412,8 +415,20 @@ impl DarklakeSDK {
 
         instructions.push(add_liquidity_instruction);
 
-        let add_liquidity_transaction =
-            Transaction::new_unsigned(Message::new(&instructions, Some(&user)));
+        let address_lookup_table_account = get_address_lookup_table(&self.rpc_client, self.is_devnet).await?;
+
+        let recent_blockhash = self.rpc_client.get_latest_blockhash().await?;
+        let message_v0 = v0::Message::try_compile(
+            &user,
+            &instructions,
+            &[address_lookup_table_account],
+            recent_blockhash,
+        )?;
+
+        let add_liquidity_transaction = VersionedTransaction {
+            signatures: vec![],
+            message: VersionedMessage::V0(message_v0),
+        };
 
         Ok(add_liquidity_transaction)
     }
@@ -426,7 +441,7 @@ impl DarklakeSDK {
         min_amount_y: u64,
         amount_lp: u64,
         user: Pubkey,
-    ) -> Result<Transaction> {
+    ) -> Result<VersionedTransaction> {
         let is_x_sol = token_x == SOL_MINT;
         let is_y_sol = token_y == SOL_MINT;
 
@@ -473,7 +488,7 @@ impl DarklakeSDK {
             min_amount_x,
             min_amount_y,
             user,
-            label: Some(self.label),
+            label: self.label,
         };
 
         let remove_liquidity_instruction = self.remove_liquidity_ix(remove_liquidity_params)?;
@@ -491,8 +506,20 @@ impl DarklakeSDK {
             instructions.push(close_wsol_instructions[1].clone());
         }
 
-        let remove_liquidity_transaction =
-            Transaction::new_unsigned(Message::new(&instructions, Some(&user)));
+        let address_lookup_table_account = get_address_lookup_table(&self.rpc_client, self.is_devnet).await?;
+
+        let recent_blockhash = self.rpc_client.get_latest_blockhash().await?;
+        let message_v0 = v0::Message::try_compile(
+            &user,
+            &instructions,
+            &[address_lookup_table_account],
+            recent_blockhash,
+        )?;
+
+        let remove_liquidity_transaction = VersionedTransaction {
+            signatures: vec![],
+            message: VersionedMessage::V0(message_v0),
+        };
 
         Ok(remove_liquidity_transaction)
     }
@@ -504,7 +531,7 @@ impl DarklakeSDK {
         amount_x: u64,
         amount_y: u64,
         user: Pubkey,
-    ) -> Result<Transaction> {
+    ) -> Result<VersionedTransaction> {
         let is_x_sol = token_x == SOL_MINT;
         let is_y_sol = token_y == SOL_MINT;
 
@@ -532,7 +559,7 @@ impl DarklakeSDK {
             token_y_program: token_y_account.owner,
             amount_x,
             amount_y,
-            label: Some(self.label),
+            label: self.label,
         };
 
         let compute_budget_ix: Instruction =
@@ -555,8 +582,20 @@ impl DarklakeSDK {
 
         instructions.push(initialize_pool_instruction);
 
-        let initialize_pool_transaction =
-            Transaction::new_unsigned(Message::new(&instructions, Some(&user)));
+        let address_lookup_table_account = get_address_lookup_table(&self.rpc_client, self.is_devnet).await?;
+
+        let recent_blockhash = self.rpc_client.get_latest_blockhash().await?;
+        let message_v0 = v0::Message::try_compile(
+            &user,
+            &instructions,
+            &[address_lookup_table_account],
+            recent_blockhash,
+        )?;
+
+        let initialize_pool_transaction = VersionedTransaction {
+            signatures: vec![],
+            message: VersionedMessage::V0(message_v0),
+        };
 
         Ok(initialize_pool_transaction)
     }
