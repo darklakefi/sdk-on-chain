@@ -1716,6 +1716,7 @@ dependencies = [
  "ark-std 0.5.0",
  "assert_matches",
  "bincode",
+ "borsh 1.5.7",
  "dex-math",
  "hex",
  "lazy_static",

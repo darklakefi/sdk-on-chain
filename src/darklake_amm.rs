@@ -318,6 +318,8 @@ impl Amm for DarklakeAmm {
         data.extend_from_slice(&swap_params.in_amount.to_le_bytes());
         data.extend_from_slice(&[is_swap_x_to_y as u8]);
         data.extend_from_slice(&commitment);
+        let serialized_label = label.try_to_vec()?;
+        data.extend_from_slice(&serialized_label);
 
         Ok(SwapAndAccountMetas {
             discriminator,
@@ -467,6 +469,10 @@ impl Amm for DarklakeAmm {
         data.extend_from_slice(&public_inputs_arr[0]);
         data.extend_from_slice(&public_inputs_arr[1]);
         data.extend_from_slice(&[*unwrap_wsol as u8]);
+        let serialized_ref_code = ref_code.try_to_vec()?;
+        data.extend_from_slice(&serialized_ref_code);
+        let serialized_label = label.try_to_vec()?;
+        data.extend_from_slice(&serialized_label);
 
         Ok(SettleAndAccountMetas {
             discriminator,
@@ -591,6 +597,8 @@ impl Amm for DarklakeAmm {
         data.extend_from_slice(&solana_proof.proof_c);
         data.extend_from_slice(&public_inputs_arr[0]);
         data.extend_from_slice(&public_inputs_arr[1]);
+        let serialized_label = label.try_to_vec()?;
+        data.extend_from_slice(&serialized_label);
 
         Ok(CancelAndAccountMetas {
             discriminator,
@@ -666,7 +674,9 @@ impl Amm for DarklakeAmm {
 
         let discriminator = [204, 141, 18, 161, 8, 177, 92, 142];
 
-        let data = discriminator.to_vec();
+        let mut data = discriminator.to_vec();
+        let serialized_label = label.try_to_vec()?;
+        data.extend_from_slice(&serialized_label);
 
         Ok(SlashAndAccountMetas {
             discriminator,
@@ -802,6 +812,10 @@ impl Amm for DarklakeAmm {
         data.extend_from_slice(&amount_lp.to_le_bytes());
         data.extend_from_slice(&max_amount_x.to_le_bytes());
         data.extend_from_slice(&max_amount_y.to_le_bytes());
+        let serialized_ref_code = ref_code.try_to_vec()?;
+        data.extend_from_slice(&serialized_ref_code);
+        let serialized_label = label.try_to_vec()?;
+        data.extend_from_slice(&serialized_label);
 
         Ok(AddLiquidityAndAccountMetas {
             discriminator,
@@ -866,6 +880,8 @@ impl Amm for DarklakeAmm {
         data.extend_from_slice(&amount_lp.to_le_bytes());
         data.extend_from_slice(&min_amount_x.to_le_bytes());
         data.extend_from_slice(&min_amount_y.to_le_bytes());
+        let serialized_label = label.try_to_vec()?;
+        data.extend_from_slice(&serialized_label);
 
         Ok(RemoveLiquidityAndAccountMetas {
             discriminator,
@@ -937,6 +953,8 @@ impl Amm for DarklakeAmm {
         let mut data = discriminator.to_vec();
         data.extend_from_slice(&amount_x.to_le_bytes());
         data.extend_from_slice(&amount_y.to_le_bytes());
+        let serialized_label = label.try_to_vec()?;
+        data.extend_from_slice(&serialized_label);
 
         Ok(InitializePoolAndAccountMetas {
             discriminator,
