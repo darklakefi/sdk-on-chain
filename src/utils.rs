@@ -11,7 +11,7 @@ use spl_associated_token_account::get_associated_token_address;
 use spl_token::native_mint;
 use spl_token_2022::extension::transfer_fee::TransferFeeConfig;
 
-use crate::constants::DEVNET_LOOKUP;
+use crate::{constants::DEVNET_LOOKUP, MAINNET_LOOKUP};
 
 pub(crate) fn get_transfer_fee(
     transfer_fee_config: Option<TransferFeeConfig>,
@@ -119,7 +119,7 @@ pub async fn get_address_lookup_table(
     let alt_pubkey = if is_devnet {
         DEVNET_LOOKUP
     } else {
-        return Err(anyhow::anyhow!("Address lookup table not found"));
+        MAINNET_LOOKUP
     };
 
     // Fetch the address lookup table

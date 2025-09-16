@@ -25,6 +25,7 @@ pub const METADATA_SEED: &[u8] = b"metadata";
 pub const POOL_RESERVE_SEED: &[u8] = b"pool_reserve";
 
 pub const DEVNET_LOOKUP: Pubkey = pubkey!("fUT5cRYT7RTS4kSq7ZpPwqaH7E68soubbutFxYHeNjo");
+pub const MAINNET_LOOKUP: Pubkey = pubkey!("2h3Sz2G84TcrqWc3FAyRZjjf5aCExMKM5sG3fh1bBXSg");
 
 lazy_static! {
     pub static ref AMM_CONFIG: Pubkey = Pubkey::find_program_address(

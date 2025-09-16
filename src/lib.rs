@@ -486,4 +486,4 @@ pub use reduced_amm_params::{
 
 pub use amm::SwapMode;
 
-pub use constants::DEVNET_LOOKUP;
+pub use constants::{DEVNET_LOOKUP, MAINNET_LOOKUP};
