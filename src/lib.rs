@@ -35,7 +35,7 @@
 //!
 //! // Initialize the SDK
 //! let mut sdk = DarklakeSDK::new(
-//!     "https://api.devnet.solana.com",
+//!     "https://api.devnet.solana.com", 
 //!     CommitmentLevel::Confirmed,
 //!     true, // is_devnet
 //!     None, // label (optional, up to 10 characters)
@@ -84,7 +84,7 @@
 //! ```rust
 //! // Swap tx
 //! let (swap_tx, order_key, min_out, salt) = sdk
-//!     .swap_tx(token_mint_x, token_mint_y, 1_000, 1, user_keypair.pubkey())
+//!     .swap_tx(&token_mint_x, &token_mint_y, 1_000, 1, &user_keypair.pubkey())
 //!     .await?;
 //!
 //! let tx = VersionedTransaction::try_new(swap_tx.message, &[&user_keypair])?;
@@ -95,7 +95,7 @@
 //!
 //! ```rust
 //! let finalize_tx: solana_sdk::transaction::VersionedTransaction = sdk
-//!     .finalize_tx(order_key, unwrap_wsol, min_out, salt, None)
+//!     .finalize_tx(&order_key, unwrap_wsol, min_out, salt, None)
 //!     .await?;
 //!
 //! let tx = VersionedTransaction::try_new(finalize_tx.message, &[&user_keypair])?;
@@ -108,7 +108,7 @@
 //! #### Trading with Manual Control
 //!
 //! ```rust
-//! sdk.load_pool(token_mint_x, token_mint_y).await?;
+//! sdk.load_pool(&token_mint_x, &token_mint_y).await?;
 //!
 //! sdk.update_accounts().await?;
 //!
@@ -125,7 +125,7 @@
 //!     salt,
 //! };
 //!
-//! let swap_ix = sdk.swap_ix(swap_params)?;
+//! let swap_ix = sdk.swap_ix(&swap_params)?;
 //!
 //! let recent_blockhash = rpc_client
 //!     .get_latest_blockhash()
@@ -165,7 +165,7 @@
 //!
 //! let compute_budget_ix: Instruction = ComputeBudgetInstruction::set_compute_unit_limit(500_000);
 //!
-//! let finalize_ix = sdk.finalize_ix(finalize_params)?;
+//! let finalize_ix = sdk.finalize_ix(&finalize_params)?;
 //!
 //! let recent_blockhash = rpc_client
 //!     .get_latest_blockhash()
@@ -218,20 +218,20 @@
 //!
 //! #### Transaction Functions (`_tx`) - Fully Formatted Transactions
 //!
-//! - **`quote(token_in, token_out, amount_in)`** - Get a quote for a swap
-//! - **`swap_tx(token_in, token_out, amount_in, min_amount_out, token_owner)`** - Generate swap transaction, returns `(VersionedTransaction, order_key, min_amount_out, salt)`
-//! - **`finalize_tx(order_key, unwrap_wsol, min_out, salt, settle_signer)`** - Generate finalize transaction using parameters from swap_tx
+//! - **`quote(&token_in, &token_out, amount_in)`** - Get a quote for a swap
+//! - **`swap_tx(&token_in, &token_out, amount_in, min_amount_out, &token_owner)`** - Generate swap transaction, returns `(VersionedTransaction, order_key, min_amount_out, salt)`
+//! - **`finalize_tx(&order_key, unwrap_wsol, min_out, salt, settle_signer)`** - Generate finalize transaction using parameters from swap_tx
 //!
 //! #### Instruction Functions (`_ix`) - Core Instructions
 //!
-//! - **`swap_ix(swap_params)`** - Generate swap instruction
-//! - **`finalize_ix(finalize_params)`** - Generate finalize instruction
+//! - **`swap_ix(&swap_params)`** - Generate swap instruction
+//! - **`finalize_ix(&finalize_params)`** - Generate finalize instruction
 //!
 //! #### Internal State Management
 //!
-//! - **`load_pool(token_x, token_y)`** - Load pool data for internal state tracking
+//! - **`load_pool(&token_x, &token_y)`** - Load pool data for internal state tracking
 //! - **`update_accounts()`** - Update internal state with latest chain data
-//! - **`get_order(user, commitment_level)`** - Get order data (bypasses internal cache, fetches latest state directly from chain)
+//! - **`get_order(&user, commitment_level)`** - Get order data (bypasses internal cache, fetches latest state directly from chain)
 //!
 //! ### Parameter Types
 //!
