@@ -24,13 +24,13 @@
 //!
 //! ```toml
 //! [dependencies]
-//! darklake-sdk = "0.1.7"
+//! darklake-sdk-on-chain = "0.1.7"
 //! ```
 //!
 //! ### Basic Setup
 //!
 //! ```rust
-//! use darklake_sdk::DarklakeSDK;
+//! use darklake_sdk_on_chain::DarklakeSDK;
 //! use solana_sdk::commitment_config::CommitmentLevel;
 //!
 //! // Initialize the SDK
@@ -56,7 +56,7 @@
 //! ### Address Lookup Table
 //! For devnet usage, you can import the pre-configured address lookup table (DEVNET_LOOKUP/MAINNET_LOOKUP):
 //! ```rust
-//! use darklake_sdk::DEVNET_LOOKUP;
+//! use darklake_sdk_on_chain::DEVNET_LOOKUP;
 //! ```
 //!
 //! ## ⚠️ Important: SOL/WSOL Handling
@@ -273,7 +273,7 @@
 //! - **`MAINNET_LOOKUP`**: Pre-configured address lookup table for mainnet usage
 //!
 //! ```rust
-//! use darklake_sdk::DEVNET_LOOKUP;
+//! use darklake_sdk_on_chain::DEVNET_LOOKUP;
 //! ```
 //!
 //! ## 📈 Performance Considerations
