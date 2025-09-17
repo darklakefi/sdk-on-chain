@@ -701,7 +701,7 @@ impl DarklakeSDK {
         Ok(order)
     }
 
-    pub fn swap_ix(&mut self, swap_params: &SwapParamsIx) -> Result<Instruction> {
+    pub fn swap_ix(&self, swap_params: &SwapParamsIx) -> Result<Instruction> {
         let swap_params = SwapParams {
             source_mint: swap_params.source_mint,
             destination_mint: swap_params.destination_mint,
@@ -725,7 +725,7 @@ impl DarklakeSDK {
         })
     }
 
-    pub fn finalize_ix(&mut self, finalize_params: &FinalizeParamsIx) -> Result<Instruction> {
+    pub fn finalize_ix(&self, finalize_params: &FinalizeParamsIx) -> Result<Instruction> {
         let finalize_params = FinalizeParams {
             settle_signer: finalize_params.settle_signer,
             order_owner: finalize_params.order_owner,
@@ -758,7 +758,7 @@ impl DarklakeSDK {
     }
 
     pub fn add_liquidity_ix(
-        &mut self,
+        &self,
         add_liquidity_params: &AddLiquidityParamsIx,
     ) -> Result<Instruction> {
         let add_liquidity_params = AddLiquidityParams {
@@ -782,7 +782,7 @@ impl DarklakeSDK {
     }
 
     pub fn remove_liquidity_ix(
-        &mut self,
+        &self,
         remove_liquidity_params: &RemoveLiquidityParamsIx,
     ) -> Result<Instruction> {
         let remove_liquidity_params = RemoveLiquidityParams {
@@ -805,7 +805,7 @@ impl DarklakeSDK {
     }
 
     pub fn initialize_pool_ix(
-        &mut self,
+        &self,
         initialize_pool_params: &InitializePoolParamsIx,
     ) -> Result<Instruction> {
         let initialize_pool_params = InitializePoolParams {
