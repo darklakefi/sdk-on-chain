@@ -54,7 +54,7 @@ impl DarklakeSDK {
         };
 
         // label
-        let sdk_label_prefix = "cv0.1.9";
+        let sdk_label_prefix = "cv0.2.0";
 
         // sanity check for in-case we exceed prefix length
         if sdk_label_prefix.len() > 10 {

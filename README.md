@@ -1,4 +1,6 @@
-# Darklake DEX SDK
+# Darklake DEX on-chain SDK
+****
+[![Darklake-SDK](https://img.shields.io/badge/Darklake-SDK-010f06?labelColor=35d688)](https://darklake.fi/) [![SDK Version](https://img.shields.io/badge/dynamic/toml?url=https%3A%2F%2Fraw.githubusercontent.com%2Fdarklakefi%2Fsdk-on-chain%2Fdevelop%2FCargo.toml&query=%24.package.version&label=SDK%20Version)](Cargo.toml)
 
 A standalone SDK for interacting with Darklake AMM pools on Solana. This SDK provides two main usage flows:
 
@@ -24,13 +26,13 @@ Add this to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-darklake-sdk = "0.1.7"
+darklake-sdk-on-chain = "0.1.7"
 ```
 
 ### Basic Setup
 
 ```rust
-use darklake_sdk::DarklakeSDK;
+use darklake_sdk_on_chain::DarklakeSDK;
 use solana_sdk::commitment_config::CommitmentLevel;
 
 // Initialize the SDK
@@ -56,7 +58,7 @@ The SDK uses **Versioned Transactions** by default, which is the preferred appro
 ### Address Lookup Table
 For devnet usage, you can import the pre-configured address lookup table (DEVNET_LOOKUP/MAINNET_LOOKUP):
 ```rust
-use darklake_sdk::DEVNET_LOOKUP;
+use darklake_sdk_on_chain::DEVNET_LOOKUP;
 ```
 
 ## ⚠️ Important: SOL/WSOL Handling
@@ -273,7 +275,7 @@ The SDK provides pre-configured address lookup tables for use with versioned tra
 - **`MAINNET_LOOKUP`**: Pre-configured address lookup table for mainnet usage
 
 ```rust
-use darklake_sdk::DEVNET_LOOKUP;
+use darklake_sdk_on_chain::DEVNET_LOOKUP;
 ```
 
 ## 📈 Performance Considerations
