@@ -51,7 +51,7 @@ pub(crate) trait Amm: Send + Sync {
     ) -> Result<SettleAndAccountMetas>;
 
     /// Get order pubkey
-    fn get_order_pubkey(&self, user: Pubkey) -> Result<Pubkey>;
+    fn get_order_pubkey(&self, user: &Pubkey) -> Result<Pubkey>;
 
     /// Get order output
     fn parse_order_data(&self, order_data: &[u8]) -> Result<Order>;

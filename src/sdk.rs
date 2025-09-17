@@ -262,7 +262,7 @@ impl DarklakeSDK {
             message: VersionedMessage::V0(message_v0),
         };
 
-        let order_key = self.darklake_amm.get_order_pubkey(token_owner)?;
+        let order_key = self.darklake_amm.get_order_pubkey(&token_owner)?;
 
         Ok((swap_transaction, order_key, min_amount_out, salt))
     }
@@ -651,7 +651,7 @@ impl DarklakeSDK {
     // does not require load_pool or update_accounts is a standalone function after new() is called
     pub async fn get_order(
         &self,
-        user: Pubkey,
+        user: &Pubkey,
         commitment_level: CommitmentLevel,
     ) -> Result<Order> {
         let order_key = self.darklake_amm.get_order_pubkey(user)?;

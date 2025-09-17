@@ -1,6 +1,6 @@
 [package]
 name = "darklake-sdk-on-chain"
-version = "0.1.9"
+version = "0.2.0"
 description = "Darklake DEX SDK - A standalone SDK for interacting directly with Darklake AMM pools"
 edition = "2021"
 authors = ["Darklake Team"]

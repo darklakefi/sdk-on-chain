@@ -296,7 +296,7 @@ impl Amm for DarklakeAmm {
         );
 
         let pool_wsol_reserve = DarklakeAmm::get_pool_wsol_reserve(self.key);
-        let order = self.get_order(*token_transfer_authority);
+        let order = self.get_order(token_transfer_authority);
 
         let commitment = to_32_byte_buffer(&bytes_to_bigint(&u64_array_to_u8_array_le(
             &compute_poseidon_hash_with_salt(*min_out, *salt),
@@ -353,7 +353,7 @@ impl Amm for DarklakeAmm {
         !self.amm_config.halted
     }
 
-    fn get_order_pubkey(&self, user: Pubkey) -> Result<Pubkey> {
+    fn get_order_pubkey(&self, user: &Pubkey) -> Result<Pubkey> {
         if self.key == Pubkey::default() {
             bail!("Darklake pool is not initialized");
         }
@@ -412,7 +412,7 @@ impl Amm for DarklakeAmm {
 
         let caller_token_account_wsol =
             DarklakeAmm::get_user_token_account(*settle_signer, native_mint::ID, spl_token::ID);
-        let order = self.get_order(*order_owner);
+        let order = self.get_order(order_owner);
         let order_token_account_wsol = self.get_order_token_account_wsol(*order_owner);
 
         let private_inputs = PrivateProofInputs {
@@ -539,7 +539,7 @@ impl Amm for DarklakeAmm {
 
         let caller_token_account_wsol =
             DarklakeAmm::get_user_token_account(*settle_signer, native_mint::ID, spl_token::ID);
-        let order = self.get_order(*order_owner);
+        let order = self.get_order(order_owner);
 
         let private_inputs = PrivateProofInputs {
             min_out: *min_out,
@@ -653,7 +653,7 @@ impl Amm for DarklakeAmm {
 
         let caller_token_account_wsol =
             DarklakeAmm::get_user_token_account(*settle_signer, native_mint::ID, spl_token::ID);
-        let order = self.get_order(*order_owner);
+        let order = self.get_order(order_owner);
 
         let discriminator = [204, 141, 18, 161, 8, 177, 92, 142];
 
@@ -1052,7 +1052,7 @@ impl DarklakeAmm {
         .0
     }
 
-    fn get_order(&self, user: Pubkey) -> Pubkey {
+    fn get_order(&self, user: &Pubkey) -> Pubkey {
         Pubkey::find_program_address(
             &[ORDER_SEED, self.key.as_ref(), user.as_ref()],
             &self.program_id(),
