@@ -14,7 +14,7 @@ The functions are only necessary if `_ix` functions are used. As the SDK user is
 The SDK includes internal chain state tracking functions:
 - **`load_pool`**: Loads pool data for internal state tracking
 - **`update_accounts`**: Updates internal state with latest chain data
-- **`get_order`**: Exception helper that bypasses internal cache and fetches the latest order state directly from the chain. This is used to help reduce on-chain calls when only the order is needed.
+- **`get_order`**: Exception helper that bypasses internal cache and fetches the latest order state directly from the chain. This is used to help reduce on-chain calls when only the order is needed. Also exports `Order` struct.
 
 ## 🚀 Quick Start
 
