@@ -32,17 +32,6 @@ pub fn compute_poseidon_hash_with_salt(min_out: u64, salt: [u8; 8]) -> [u64; 4] 
     hash
 }
 
-pub fn compute_poseidon_hash(min_out: u64) -> [u64; 4] {
-    let mut rng = OsRng;
-
-    let mut raw_salt_bytes_8 = [0u8; 8];
-    rng.fill_bytes(&mut raw_salt_bytes_8); // Fill with 32 cryptographically random bytes
-
-    let hash = compute_poseidon_hash_with_salt(min_out, raw_salt_bytes_8);
-
-    hash
-}
-
 pub fn bytes_to_bigint(bytes: &[u8; 32]) -> BigUint {
     // Step 1: Convert bytes to BigInt (little-endian) - equivalent to F.fromRprLE(o)
     let value = BigUint::from_bytes_le(bytes);
@@ -70,35 +59,6 @@ pub fn bytes_to_bigint(bytes: &[u8; 32]) -> BigUint {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_compute_poseidon_hash() {
-        // Test with a small value
-        let min_out = 1000u64;
-        compute_poseidon_hash(min_out);
-
-        // Test with zero
-        compute_poseidon_hash(0u64);
-
-        // Test with a large value
-        compute_poseidon_hash(u64::MAX);
-
-        // Test with a medium value
-        compute_poseidon_hash(123456789u64);
-    }
-
-    #[test]
-    fn test_poseidon_hash_consistency() {
-        // Test that the same input produces consistent output
-        let min_out = 12345u64;
-
-        // Call compute_poseidon_hash multiple times with the same input
-        // Note: This function generates random salt each time, so outputs will differ
-        // But the function should not panic and should complete successfully
-        for _ in 0..5 {
-            compute_poseidon_hash(min_out);
-        }
-    }
 
     #[test]
     fn test_poseidon_hash_bytes_and_field_element_all_zeroes() {

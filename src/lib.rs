@@ -9,10 +9,12 @@
 //!
 //! ## Internal State Management
 //!
+//! The functions are only necessary if `_ix` functions are used. As the SDK user is expected to call `load_poo` and `updated_accounts` before calling any `_ix`.
+//!
 //! The SDK includes internal chain state tracking functions:
 //! - **`load_pool`**: Loads pool data for internal state tracking
 //! - **`update_accounts`**: Updates internal state with latest chain data
-//! - **`get_order`**: Exception helper that bypasses internal cache and fetches the latest order state directly from the chain
+//! - **`get_order`**: Exception helper that bypasses internal cache and fetches the latest order state directly from the chain. This is used to help reduce on-chain calls when only the order is needed.
 //!
 //! ## 🚀 Quick Start
 //!
@@ -31,8 +33,30 @@
 //! use darklake_sdk::DarklakeSDK;
 //! use solana_sdk::commitment_config::CommitmentLevel;
 //!
-//! // Initialize the SDK (no longer requires a keypair)
-//! let mut sdk = DarklakeSDK::new("https://api.devnet.solana.com", CommitmentLevel::Confirmed);
+//! // Initialize the SDK
+//! let mut sdk = DarklakeSDK::new(
+//!     "https://api.devnet.solana.com",
+//!     CommitmentLevel::Confirmed,
+//!     true, // is_devnet
+//!     None, // label (optional, up to 10 characters)
+//!     None, // ref_code (optional, up to 20 characters)
+//! )?;
+//! ```
+//!
+//! #### Optional Parameters
+//!
+//! - **`label`**: Optional string up to 10 characters for identifying your application (Supply `None` if not needed)
+//! - **`ref_code`**: Optional string up to 20 characters for referral tracking (Supply `None` if not needed)
+//!
+//! ## 📝 Important Notes
+//!
+//! ### Versioned Transactions
+//! The SDK uses **Versioned Transactions** by default, which is the preferred approach for better performance and reduced transaction size. All transaction functions (`_tx`) return `VersionedTransaction` objects.
+//!
+//! ### Address Lookup Table
+//! For devnet usage, you can import the pre-configured address lookup table (DEVNET_LOOKUP/MAINNET_LOOKUP):
+//! ```rust
+//! use darklake_sdk::DEVNET_LOOKUP;
 //! ```
 //!
 //! ## ⚠️ Important: SOL/WSOL Handling
@@ -40,15 +64,14 @@
 //! **The Darklake DEX does not support direct SOL pairs - only WSOL (Wrapped SOL) pairs are supported.**
 //!
 //! ### Automatic Handling (Transaction Functions)
-//! The transaction functions (`swap_tx`, `add_liquidity_tx`, `remove_liquidity_tx`) automatically handle SOL/WSOL conversion by:
+//! The transaction functions (`swap_tx`) automatically handle SOL/WSOL conversion by:
 //! - Adding wrap instructions when SOL is provided as input
 //! - Adding unwrap instructions when WSOL is received as output
 //!
 //! ### Manual Handling (Instruction Functions)
-//! The instruction functions (`swap_ix`, `finalize_ix`, `add_liquidity_ix`, `remove_liquidity_ix`) **do not** automatically handle SOL/WSOL conversion. When using these methods:
-//! - You must manually add wrap/unwrap instructions if needed
-//! - Ensure proper WSOL token account management
-//! - Supply the `unwrap_wsol` parameter in `FinalizeParams` if necessary or add a WSOL token account closing.
+//! The instruction functions (`swap_ix`, `finalize_ix`) **do not** automatically handle SOL/WSOL wrapping. When using these methods:
+//! - You must manually add wrap instructions if needed
+//! - Supply the `unwrap_wsol` parameter in `FinalizeParamsIx` if necessary or add a WSOL token account closing.
 //!
 //! ## 📖 Usage Patterns
 //!
@@ -59,136 +82,23 @@
 //! #### Trading (Swap)
 //!
 //! ```rust
-//! use solana_sdk::pubkey::Pubkey;
-//! use solana_sdk::signer::keypair::Keypair;
+//! // Swap tx
+//! let (swap_tx, order_key, min_out, salt) = sdk
+//!     .swap_tx(token_mint_x, token_mint_y, 1_000, 1, user_keypair.pubkey())
+//!     .await?;
 //!
-//! // Define token mints
-//! let token_in = Pubkey::from_str("So11111111111111111111111111111111111111112").unwrap(); // WSOL (Wrapped SOL)
-//! let token_out = Pubkey::from_str("EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v").unwrap(); // USDC
-//! let user_keypair = Keypair::new(); // Your wallet keypair
-//! let user_pubkey = user_keypair.pubkey();
-//!
-//! // Get a quote first
-//! let quote = sdk.quote(token_in, token_out, 1_000_000).await?; // 1 WSOL
-//! println!("Expected output: {}", quote.out_amount);
-//!
-//! // Execute the swap - returns transaction and extra parameters needed for finalize
-//! let (swap_tx, order_key, min_amount_out, salt) = sdk.swap_tx(
-//!     token_in,
-//!     token_out,
-//!     1_000_000,  // 1 WSOL (in lamports)
-//!     950_000,    // Minimum 0.95 USDC out (5% slippage)
-//!     user_pubkey, // Token owner
-//! ).await?;
-//!
-//! // Sign and send the swap transaction
-//! let recent_blockhash = rpc_client.get_latest_blockhash().await?;
-//! let swap_tx_signed = Transaction::new_signed_with_payer(
-//!     &swap_tx.message.instructions,
-//!     Some(&user_pubkey),
-//!     &[&user_keypair],
-//!     recent_blockhash,
-//! );
-//! let swap_signature = rpc_client.send_and_confirm_transaction(&swap_tx_signed)?;
-//!
-//! // Generate the finalize transaction using the returned parameters
-//! let finalize_tx = sdk.finalize_tx(
-//!     order_key,
-//!     true, // unwrap_wsol if output is WSOL
-//!     min_amount_out,
-//!     salt,
-//!     None, // settle_signer (optional, defaults to order owner)
-//! ).await?;
-//!
-//! // Sign and send the finalize transaction
-//! let finalize_tx_signed = Transaction::new_signed_with_payer(
-//!     &finalize_tx.message.instructions,
-//!     Some(&user_pubkey),
-//!     &[&user_keypair],
-//!     recent_blockhash,
-//! );
-//! let finalize_signature = rpc_client.send_and_confirm_transaction(&finalize_tx_signed)?;
-//!
-//! println!("Swap signature: {}", swap_signature);
-//! println!("Finalize signature: {}", finalize_signature);
+//! let tx = VersionedTransaction::try_new(swap_tx.message, &[&user_keypair])?;
+//! let res = rpc_client.send_and_confirm_transaction_with_spinner(&tx)?;
 //! ```
 //!
-//! #### Adding Liquidity
+//! #### Finalizing Swap
 //!
 //! ```rust
-//! let token_x = Pubkey::from_str("So11111111111111111111111111111111111111112").unwrap(); // WSOL
-//! let token_y = Pubkey::from_str("EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v").unwrap(); // USDC
-//! let user_keypair = Keypair::new(); // Your wallet keypair
-//! let user_pubkey = user_keypair.pubkey();
+//! let finalize_tx: solana_sdk::transaction::VersionedTransaction = sdk
+//!     .finalize_tx(order_key, unwrap_wsol, min_out, salt, None)
+//!     .await?;
 //!
-//! let tx = sdk.add_liquidity_tx(
-//!     token_x,
-//!     token_y,
-//!     1_000_000,  // Max amount of token X
-//!     1_000_000,  // Max amount of token Y
-//!     1_000,      // LP token amount to mint
-//!     user_pubkey, // User public key
-//! ).await?;
-//!
-//! let recent_blockhash = rpc_client.get_latest_blockhash().await?;
-//! let tx_signed = Transaction::new_signed_with_payer(
-//!     &tx.message.instructions,
-//!     Some(&user_pubkey),
-//!     &[&user_keypair],
-//!     recent_blockhash,
-//! );
-//! let signature = rpc_client.send_and_confirm_transaction(&tx_signed)?;
-//! println!("Add liquidity signature: {}", signature);
-//! ```
-//!
-//! #### Removing Liquidity
-//!
-//! ```rust
-//! let tx = sdk.remove_liquidity_tx(
-//!     token_x,
-//!     token_y,
-//!     500_000,    // Min amount of token X to receive
-//!     500_000,    // Min amount of token Y to receive
-//!     500,        // LP token amount to burn
-//!     user_pubkey, // User public key
-//! ).await?;
-//!
-//! let recent_blockhash = rpc_client.get_latest_blockhash().await?;
-//! let tx_signed = Transaction::new_signed_with_payer(
-//!     &tx.message.instructions,
-//!     Some(&user_pubkey),
-//!     &[&user_keypair],
-//!     recent_blockhash,
-//! );
-//! let signature = rpc_client.send_and_confirm_transaction(&tx_signed)?;
-//! println!("Remove liquidity signature: {}", signature);
-//! ```
-//!
-//! #### Initializing Pool
-//!
-//! ```rust
-//! let token_x = Pubkey::from_str("So11111111111111111111111111111111111111112").unwrap(); // WSOL
-//! let token_y = Pubkey::from_str("EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v").unwrap(); // USDC
-//! let user_keypair = Keypair::new(); // Your wallet keypair
-//! let user_pubkey = user_keypair.pubkey();
-//!
-//! let tx = sdk.initialize_pool_tx(
-//!     token_x,
-//!     token_y,
-//!     1_000_000,  // Amount of token X to deposit
-//!     1_000_000,  // Amount of token Y to deposit
-//!     user_pubkey, // User public key
-//! ).await?;
-//!
-//! let recent_blockhash = rpc_client.get_latest_blockhash().await?;
-//! let tx_signed = Transaction::new_signed_with_payer(
-//!     &tx.message.instructions,
-//!     Some(&user_pubkey),
-//!     &[&user_keypair],
-//!     recent_blockhash,
-//! );
-//! let signature = rpc_client.send_and_confirm_transaction(&tx_signed)?;
-//! println!("Initialize pool signature: {}", signature);
+//! let tx = VersionedTransaction::try_new(finalize_tx.message, &[&user_keypair])?;
 //! ```
 //!
 //! ### 2. Instruction Functions (`_ix`) - Core Instructions
@@ -198,182 +108,124 @@
 //! #### Trading with Manual Control
 //!
 //! ```rust
-//! use darklake_sdk::{SwapParams, FinalizeParams, SwapMode};
-//! use solana_sdk::instruction::Instruction;
-//! use solana_sdk::signer::keypair::Keypair;
-//! use solana_sdk::commitment_config::CommitmentLevel;
+//! sdk.load_pool(token_mint_x, token_mint_y).await?;
 //!
-//! // Step 1: Load the pool (for internal state tracking)
-//! sdk.load_pool(token_in, token_out).await?;
-//!
-//! // Step 2: Update accounts with latest data
 //! sdk.update_accounts().await?;
 //!
-//! // Step 3: Create swap parameters
-//! let swap_params = SwapParams {
-//!     source_mint: token_in,
-//!     destination_mint: token_out,
-//!     token_transfer_authority: user_pubkey, // Your wallet's public key
-//!     in_amount: 1_000_000,
+//! let salt = [1, 2, 3, 4, 5, 6, 7, 8];
+//! let min_out = 1;
+//!
+//! let swap_params = SwapParamsIx {
+//!     source_mint: token_mint_x,
+//!     destination_mint: token_mint_y,
+//!     token_transfer_authority: user_keypair.pubkey(),
+//!     in_amount: 1_000,
 //!     swap_mode: SwapMode::ExactIn,
-//!     min_out: 950_000,
-//!     salt: [1, 2, 3, 4, 5, 6, 7, 8], // Unique salt for this order
+//!     min_out,
+//!     salt,
 //! };
 //!
-//! // Step 4: Generate swap instruction
-//! let swap_instruction = sdk.swap_ix(swap_params)?;
+//! let swap_ix = sdk.swap_ix(swap_params)?;
 //!
-//! // Step 5: Build and send the swap transaction
-//! let swap_tx = Transaction::new_signed_with_payer(
-//!     &[swap_instruction],
-//!     Some(&user_pubkey),
-//!     &[&user_keypair],
+//! let recent_blockhash = rpc_client
+//!     .get_latest_blockhash()
+//!     .context("Failed to get recent blockhash")?;
+//!
+//! let address_lookup_table = get_address_lookup_table(&rpc_client, DEVNET_LOOKUP).await?;
+//!
+//! let message_v0 = v0::Message::try_compile(
+//!     &user_keypair.pubkey(),
+//!     &[swap_ix],
+//!     &[address_lookup_table.clone()],
 //!     recent_blockhash,
-//! );
-//! let swap_signature = rpc_client.send_and_confirm_transaction(&swap_tx)?;
+//! )?;
 //!
-//! // Step 6: Get order data (bypasses internal cache for latest state)
-//! let order = sdk.get_order(user_pubkey, CommitmentLevel::Confirmed).await?;
+//! let mut transaction = VersionedTransaction {
+//!     signatures: vec![],
+//!     message: VersionedMessage::V0(message_v0),
+//! };
 //!
-//! // Step 7: Create finalize parameters
-//! let finalize_params = FinalizeParams {
-//!     settle_signer: user_pubkey,
-//!     order_owner: user_pubkey,
-//!     unwrap_wsol: true, // Set to true if output is WSOL and you want to unwrap it to SOL
-//!     min_out: 950_000,
-//!     salt: [1, 2, 3, 4, 5, 6, 7, 8],
-//!     output: order.d_out,
-//!     commitment: order.c_min,
-//!     deadline: order.deadline,
+//! transaction.signatures = vec![user_keypair.sign_message(&transaction.message.serialize())];
+//! ```
+//!
+//! #### Finalizing with Manual Control
+//!
+//! ```rust
+//! let finalize_params = FinalizeParamsIx {
+//!     settle_signer: user_keypair.pubkey(),
+//!     order_owner: user_keypair.pubkey(),
+//!     unwrap_wsol: false,      // Set to true if output is wrapped SOL
+//!     min_out,                 // Same min_out as swap
+//!     salt,                    // Same salt as swap
+//!     output: order.d_out,     // Fetched from on chain order
+//!     commitment: order.c_min, // Fetched from on chain order
+//!     deadline: order.deadline, // Fetched from on chain order
 //!     current_slot: rpc_client.get_slot()?,
 //! };
 //!
-//! // Step 8: Generate finalize instruction
-//! let finalize_instruction = sdk.finalize_ix(finalize_params)?;
+//! let compute_budget_ix: Instruction = ComputeBudgetInstruction::set_compute_unit_limit(500_000);
 //!
-//! // Step 9: Build and send the finalize transaction
-//! let finalize_tx = Transaction::new_signed_with_payer(
-//!     &[finalize_instruction],
-//!     Some(&user_pubkey),
-//!     &[&user_keypair],
+//! let finalize_ix = sdk.finalize_ix(finalize_params)?;
+//!
+//! let recent_blockhash = rpc_client
+//!     .get_latest_blockhash()
+//!     .context("Failed to get recent blockhash")?;
+//!
+//! let message_v0 = v0::Message::try_compile(
+//!     &user_keypair.pubkey(),
+//!     &[compute_budget_ix, finalize_ix],
+//!     &[address_lookup_table],
 //!     recent_blockhash,
-//! );
-//! let finalize_signature = rpc_client.send_and_confirm_transaction(&finalize_tx)?;
-//! ```
+//! )?;
 //!
-//! #### Adding Liquidity with Manual Control
-//!
-//! ```rust
-//! use darklake_sdk::AddLiquidityParams;
-//!
-//! // Load pool and update accounts (for internal state tracking)
-//! sdk.load_pool(token_x, token_y).await?;
-//! sdk.update_accounts().await?;
-//!
-//! // Create add liquidity parameters
-//! let add_liquidity_params = AddLiquidityParams {
-//!     amount_lp: 1_000,
-//!     max_amount_x: 1_000_000,
-//!     max_amount_y: 1_000_000,
-//!     user: user_pubkey, // Your wallet's public key
+//! let mut transaction = VersionedTransaction {
+//!     signatures: vec![],
+//!     message: VersionedMessage::V0(message_v0),
 //! };
 //!
-//! // Generate instruction
-//! let add_liquidity_instruction = sdk.add_liquidity_ix(add_liquidity_params)?;
-//!
-//! // Build and send transaction
-//! let tx = Transaction::new_signed_with_payer(
-//!     &[add_liquidity_instruction],
-//!     Some(&user_pubkey),
-//!     &[&user_keypair],
-//!     recent_blockhash,
-//! );
-//! let signature = rpc_client.send_and_confirm_transaction(&tx)?;
-//! ```
-//!
-//! #### Removing Liquidity with Manual Control
-//!
-//! ```rust
-//! use darklake_sdk::RemoveLiquidityParams;
-//!
-//! // Load pool and update accounts (for internal state tracking)
-//! sdk.load_pool(token_x, token_y).await?;
-//! sdk.update_accounts().await?;
-//!
-//! // Create remove liquidity parameters
-//! let remove_liquidity_params = RemoveLiquidityParams {
-//!     amount_lp: 500,
-//!     min_amount_x: 500_000,
-//!     min_amount_y: 500_000,
-//!     user: user_pubkey, // Your wallet's public key
-//! };
-//!
-//! // Generate instruction
-//! let remove_liquidity_instruction = sdk.remove_liquidity_ix(remove_liquidity_params)?;
-//!
-//! // Build and send transaction
-//! let tx = Transaction::new_signed_with_payer(
-//!     &[remove_liquidity_instruction],
-//!     Some(&user_pubkey),
-//!     &[&user_keypair],
-//!     recent_blockhash,
-//! );
-//! let signature = rpc_client.send_and_confirm_transaction(&tx)?;
-//! ```
-//!
-//! #### Initializing Pool with Manual Control
-//!
-//! ```rust
-//! use darklake_sdk::InitializePoolParams;
-//!
-//! // Get token program IDs (required for pool initialization)
-//! let token_x_account = rpc_client.get_account(&token_x).await?;
-//! let token_y_account = rpc_client.get_account(&token_y).await?;
-//!
-//! // Create initialize pool parameters
-//! let initialize_pool_params = InitializePoolParams {
-//!     user: user_pubkey, // Your wallet's public key
-//!     token_x,
-//!     token_x_program: token_x_account.owner,
-//!     token_y,
-//!     token_y_program: token_y_account.owner,
-//!     amount_x: 1_000_000, // Amount of token X to deposit
-//!     amount_y: 1_000_000, // Amount of token Y to deposit
-//! };
-//!
-//! // Generate instruction
-//! let initialize_pool_instruction = sdk.initialize_pool_ix(initialize_pool_params)?;
-//!
-//! // Build and send transaction
-//! let tx = Transaction::new_signed_with_payer(
-//!     &[initialize_pool_instruction],
-//!     Some(&user_pubkey),
-//!     &[&user_keypair],
-//!     recent_blockhash,
-//! );
-//! let signature = rpc_client.send_and_confirm_transaction(&tx)?;
+//! transaction.signatures = vec![user_keypair.sign_message(&transaction.message.serialize())];
 //! ```
 //!
 //! ## 🔧 API Reference
+//!
+//! ### DarklakeSDK Constructor
+//!
+//! #### `DarklakeSDK::new(rpc_endpoint, commitment_level, is_devnet, label, ref_code)`
+//!
+//! Creates a new Darklake SDK instance.
+//!
+//! **Parameters:**
+//! - `rpc_endpoint: &str` - Solana RPC endpoint URL
+//! - `commitment_level: CommitmentLevel` - Commitment level for RPC calls
+//! - `is_devnet: bool` - Whether using devnet. Currently only devnet/mainnet supported.
+//! - `label: Option<&str>` - Optional application/user label (max 10 characters). For example `Some("duck-ag")`.
+//! - `ref_code: Option<&str>` - Optional referral code (max 20 characters)
+//!
+//! **Returns:** `Result<DarklakeSDK>`
+//!
+//! **Example:**
+//! ```rust
+//! let sdk = DarklakeSDK::new(
+//!     "https://api.devnet.solana.com",
+//!     CommitmentLevel::Confirmed,
+//!     true, // is_devnet
+//!     None, // label
+//!     None, // ref_code
+//! )?;
+//! ```
 //!
 //! ### DarklakeSDK Methods
 //!
 //! #### Transaction Functions (`_tx`) - Fully Formatted Transactions
 //!
 //! - **`quote(token_in, token_out, amount_in)`** - Get a quote for a swap
-//! - **`swap_tx(token_in, token_out, amount_in, min_amount_out, token_owner)`** - Generate swap transaction, returns `(Transaction, order_key, min_amount_out, salt)`
+//! - **`swap_tx(token_in, token_out, amount_in, min_amount_out, token_owner)`** - Generate swap transaction, returns `(VersionedTransaction, order_key, min_amount_out, salt)`
 //! - **`finalize_tx(order_key, unwrap_wsol, min_out, salt, settle_signer)`** - Generate finalize transaction using parameters from swap_tx
-//! - **`add_liquidity_tx(token_x, token_y, max_amount_x, max_amount_y, amount_lp, user)`** - Generate add liquidity transaction
-//! - **`remove_liquidity_tx(token_x, token_y, min_amount_x, min_amount_y, amount_lp, user)`** - Generate remove liquidity transaction
-//! - **`initialize_pool_tx(token_x, token_y, amount_x, amount_y, user)`** - Generate initialize pool transaction
 //!
 //! #### Instruction Functions (`_ix`) - Core Instructions
 //!
 //! - **`swap_ix(swap_params)`** - Generate swap instruction
 //! - **`finalize_ix(finalize_params)`** - Generate finalize instruction
-//! - **`add_liquidity_ix(add_liquidity_params)`** - Generate add liquidity instruction
-//! - **`remove_liquidity_ix(remove_liquidity_params)`** - Generate remove liquidity instruction
-//! - **`initialize_pool_ix(initialize_pool_params)`** - Generate initialize pool instruction
 //!
 //! #### Internal State Management
 //!
@@ -383,9 +235,9 @@
 //!
 //! ### Parameter Types
 //!
-//! #### SwapParams
+//! #### SwapParamsIx
 //! ```rust
-//! pub struct SwapParams {
+//! pub struct SwapParamsIx {
 //!     pub source_mint: Pubkey,
 //!     pub destination_mint: Pubkey,
 //!     pub token_transfer_authority: Pubkey,
@@ -396,9 +248,9 @@
 //! }
 //! ```
 //!
-//! #### FinalizeParams
+//! #### FinalizeParamsIx
 //! ```rust
-//! pub struct FinalizeParams {
+//! pub struct FinalizeParamsIx {
 //!     pub settle_signer: Pubkey,
 //!     pub order_owner: Pubkey,
 //!     pub unwrap_wsol: bool, // Set to true if output is WSOL and you want to unwrap it to SOL
@@ -411,42 +263,18 @@
 //! }
 //! ```
 //!
-//! #### AddLiquidityParams
-//! ```rust
-//! pub struct AddLiquidityParams {
-//!     pub amount_lp: u64,
-//!     pub max_amount_x: u64,
-//!     pub max_amount_y: u64,
-//!     pub user: Pubkey,
-//! }
-//! ```
-//!
-//! #### RemoveLiquidityParams
-//! ```rust
-//! pub struct RemoveLiquidityParams {
-//!     pub amount_lp: u64,
-//!     pub min_amount_x: u64,
-//!     pub min_amount_y: u64,
-//!     pub user: Pubkey,
-//! }
-//! ```
-//!
-//! #### InitializePoolParams
-//! ```rust
-//! pub struct InitializePoolParams {
-//!     pub user: Pubkey,
-//!     pub token_x: Pubkey,
-//!     pub token_x_program: Pubkey,
-//!     pub token_y: Pubkey,
-//!     pub token_y_program: Pubkey,
-//!     pub amount_x: u64,
-//!     pub amount_y: u64,
-//! }
-//! ```
-//!
 //! ## 🌐 Network Configuration
 //!
 //! SDK needs an rpc url which is used for on chain data fetching.
+//!
+//! ### Address Lookup Tables
+//! The SDK provides pre-configured address lookup tables for use with versioned transaction:
+//! - **`DEVNET_LOOKUP`**: Pre-configured address lookup table for devnet usage
+//! - **`MAINNET_LOOKUP`**: Pre-configured address lookup table for mainnet usage
+//!
+//! ```rust
+//! use darklake_sdk::DEVNET_LOOKUP;
+//! ```
 //!
 //! ## 📈 Performance Considerations
 //!
@@ -464,11 +292,12 @@
 //! - Open an issue on the repository
 //!
 //! ---
+//! **Note**: Make sure you are using the same commitment level both for your own rpc and the sdk, unless you know what you are doing.
 //!
 //! **Note**: This SDK is for interacting with the Darklake DEX on Solana. Always test thoroughly on devnet before using on mainnet.
 
 mod account_metas;
-mod amm; // Private module - users should use re-exported types
+mod amm;
 mod constants;
 mod darklake_amm;
 mod proof;
@@ -478,7 +307,6 @@ mod utils;
 
 pub use sdk::DarklakeSDK;
 
-// Re-export commonly used AMM types for easier access
 pub use reduced_amm_params::{
     AddLiquidityParamsIx, FinalizeParamsIx, InitializePoolParamsIx, RemoveLiquidityParamsIx,
     SwapParamsIx,

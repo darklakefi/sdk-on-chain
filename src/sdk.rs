@@ -30,8 +30,6 @@ use solana_sdk::{
 };
 use std::collections::HashMap;
 use tokio::time::{sleep, Duration};
-
-/// Stateful Darklake SDK that holds RPC client and signer
 pub struct DarklakeSDK {
     rpc_client: RpcClient,
     darklake_amm: DarklakeAmm,
@@ -58,7 +56,7 @@ impl DarklakeSDK {
         // label
         let sdk_label_prefix = "cv0.1.9";
 
-        // sanity check for ourselves in-case we exceed prefix length
+        // sanity check for in-case we exceed prefix length
         if sdk_label_prefix.len() > 10 {
             return Err(anyhow::anyhow!(
                 "SDK label prefix is too long, must be equal or less than 10 bytes"
@@ -170,7 +168,6 @@ impl DarklakeSDK {
             self.load_pool(_token_x, _token_y).await?;
         }
 
-        // update accounts
         self.update_accounts().await?;
 
         self.darklake_amm.quote(&QuoteParams {
@@ -219,7 +216,6 @@ impl DarklakeSDK {
             self.load_pool(_token_x, _token_y).await?;
         }
 
-        // update accounts
         self.update_accounts().await?;
 
         let salt = generate_random_salt();
@@ -228,10 +224,10 @@ impl DarklakeSDK {
             source_mint: _token_in,
             destination_mint: _token_out,
             token_transfer_authority: token_owner,
-            in_amount: amount_in, // 1 token (assuming 6 decimals)
+            in_amount: amount_in,
             swap_mode: SwapMode::ExactIn,
-            min_out: min_amount_out, // 0.95 tokens out (5% slippage tolerance)
-            salt,                    // Random salt for order uniqueness
+            min_out: min_amount_out,
+            salt,
         };
 
         let swap_instruction = self.swap_ix(swap_params)?;
@@ -312,7 +308,6 @@ impl DarklakeSDK {
             .darklake_amm
             .parse_order_data(&order_data.unwrap().data)?;
 
-        // update accounts
         self.update_accounts().await?;
 
         let settler = settle_signer.unwrap_or(order.trader);
@@ -327,12 +322,12 @@ impl DarklakeSDK {
         let finalize_params = FinalizeParamsIx {
             settle_signer: settler,    // who settles the order
             order_owner: order.trader, // who owns the order
-            unwrap_wsol,               // Set to true if output is wrapped SOL
+            unwrap_wsol,               // Set to true if you want to unwrap WSOL to SOL
             min_out,                   // Same min_out as swap
             salt,                      // Same salt as swap
-            output: order.d_out,       // Will be populated by the SDK
-            commitment: order.c_min,   // Will be populated by the SDK
-            deadline: order.deadline,
+            output: order.d_out,       // order prop
+            commitment: order.c_min,   // order prop
+            deadline: order.deadline,  // order prop
             current_slot: self
                 .rpc_client
                 .get_slot_with_commitment(CommitmentConfig::processed())
@@ -392,7 +387,6 @@ impl DarklakeSDK {
             self.load_pool(_token_x, _token_y).await?;
         }
 
-        // update accounts
         self.update_accounts().await?;
 
         let add_liquidity_params = AddLiquidityParamsIx {
@@ -466,7 +460,6 @@ impl DarklakeSDK {
             self.load_pool(_token_x, _token_y).await?;
         }
 
-        // update accounts
         self.update_accounts().await?;
 
         let (token_x_owner, token_y_owner) = self.darklake_amm.get_token_owners();
@@ -608,9 +601,8 @@ impl DarklakeSDK {
     // MANUAL HANDLING (these are prone to changes in the future)
 
     // before calling swap_ix/finalize_ix/add_liquidity_ix/remove_liquidity_ix -
-    // load_pool has to be called at least once before and update_accounts before each function call
+    // load_pool has to be called at least once before usage and update_accounts before each function call
 
-    /// Create a new Darklake AMM instance from account data
     pub async fn load_pool(
         &mut self,
         token_x: Pubkey,
@@ -817,7 +809,6 @@ impl DarklakeSDK {
     /// Helpers internal methods
     /// Get the pool address for a token pair
     fn get_pool_address(token_mint_x: Pubkey, token_mint_y: Pubkey) -> (Pubkey, Pubkey, Pubkey) {
-        // Convert token mints to bytes and ensure x is always below y by lexicographical order
         let (ordered_x, ordered_y) = if token_mint_x < token_mint_y {
             (token_mint_x, token_mint_y)
         } else {

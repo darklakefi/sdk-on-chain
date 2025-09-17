@@ -49,42 +49,38 @@ pub(crate) struct DarklakeAmm {
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Default)]
 pub struct AmmConfig {
-    pub trade_fee_rate: u64,    // 10^6 = 100%
-    pub create_pool_fee: u64,   // flat SOL fee for creating a pool
-    pub protocol_fee_rate: u64, // 10^6 = 100% (precentage of trade fee)
+    pub trade_fee_rate: u64,
+    pub create_pool_fee: u64,
+    pub protocol_fee_rate: u64,
 
-    pub wsol_trade_deposit: u64, // this should AT LEAST be the size of tx fee + any account creation fees
+    pub wsol_trade_deposit: u64,
 
     pub deadline_slot_duration: u64,
 
-    pub ratio_change_tolerance_rate: u64, // 10^6 = 100%
+    pub ratio_change_tolerance_rate: u64,
 
     pub bump: u8,
-    pub halted: bool, // if true, no actions are allowed
+    pub halted: bool,
 
-    /// padding
     pub padding: [u64; 16],
 }
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone)]
 pub struct Order {
-    // pubkeys
     pub trader: Pubkey,
     pub token_mint_x: Pubkey,
     pub token_mint_y: Pubkey,
 
-    // quantities
-    pub actual_in: u64,    // amount taken from user
-    pub exchange_in: u64,  // amount received by the pool (post token fees)
-    pub actual_out: u64,   // amount received by user
-    pub from_to_lock: u64, // amount locked in the pool
-    pub d_in: u64,         // locked_x
-    pub d_out: u64,        // locked_y
+    pub actual_in: u64,
+    pub exchange_in: u64,
+    pub actual_out: u64,
+    pub from_to_lock: u64,
+    pub d_in: u64,
+    pub d_out: u64,
     pub deadline: u64,
     pub protocol_fee: u64,
     pub wsol_deposit: u64,
 
-    // proof
     pub c_min: [u8; 32],
 
     pub is_x_to_y: bool,
@@ -95,7 +91,6 @@ pub struct Order {
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Default)]
 pub struct Pool {
-    // pubkeys
     pub creator: Pubkey,
     pub amm_config: Pubkey,
 
@@ -105,12 +100,10 @@ pub struct Pool {
     pub reserve_x: Pubkey,
     pub reserve_y: Pubkey,
 
-    // quanities
     pub token_lp_supply: u64,
     pub protocol_fee_x: u64,
     pub protocol_fee_y: u64,
 
-    // locked for existing orders
     pub locked_x: u64,
     pub locked_y: u64,
 
@@ -165,11 +158,11 @@ impl Amm for DarklakeAmm {
     fn get_accounts_to_update(&self) -> Vec<Pubkey> {
         vec![
             self.key,
-            self.pool.token_mint_x, // tokens (need owners)
+            self.pool.token_mint_x,
             self.pool.token_mint_y,
-            self.pool.reserve_x, // pool token reserves
+            self.pool.reserve_x,
             self.pool.reserve_y,
-            self.pool.amm_config, // config with fee values
+            self.pool.amm_config,
         ]
     }
 
@@ -190,7 +183,6 @@ impl Amm for DarklakeAmm {
         let (token_y_data, token_y_owner) =
             try_get_account_data_and_owner(account_map, &self.pool.reserve_y)?;
 
-        // Parse token account balances reliably for both SPL and Token2022 tokens
         self.reserve_x_balance =
             Self::parse_token_account_balance(&token_x_data, &token_x_owner, &self.pool.reserve_x)?;
         self.reserve_y_balance =
@@ -306,8 +298,6 @@ impl Amm for DarklakeAmm {
         let pool_wsol_reserve = DarklakeAmm::get_pool_wsol_reserve(self.key);
         let order = self.get_order(*token_transfer_authority);
 
-        // ADD C_MIN COMMITMENT CALCULATION HERE
-
         let commitment = to_32_byte_buffer(&bytes_to_bigint(&u64_array_to_u8_array_le(
             &compute_poseidon_hash_with_salt(*min_out, *salt),
         )));
@@ -363,8 +353,6 @@ impl Amm for DarklakeAmm {
         !self.amm_config.halted
     }
 
-    // darklake specific settlement-related functions
-
     fn get_order_pubkey(&self, user: Pubkey) -> Result<Pubkey> {
         if self.key == Pubkey::default() {
             bail!("Darklake pool is not initialized");
@@ -382,7 +370,6 @@ impl Amm for DarklakeAmm {
         Ok(order.deadline < current_slot)
     }
 
-    // both for settle
     fn get_settle_and_account_metas(
         &self,
         settle_params: &SettleParams,
@@ -438,7 +425,6 @@ impl Amm for DarklakeAmm {
             commitment: from_32_byte_buffer(&commitment),
         };
 
-        // ADD PROOF CALCULATION HERE
         let (proof, _) = generate_proof(
             &private_inputs,
             &public_inputs,
@@ -454,7 +440,6 @@ impl Amm for DarklakeAmm {
             .try_into()
             .map_err(|_| anyhow::anyhow!("Invalid public signals length"))?;
 
-        // check if cancel or settle
         let is_settle = *min_out <= *output;
 
         if !is_settle {
@@ -566,7 +551,6 @@ impl Amm for DarklakeAmm {
             commitment: from_32_byte_buffer(&commitment),
         };
 
-        // ADD PROOF CALCULATION HERE
         let (proof, _) = generate_proof(
             &private_inputs,
             &public_inputs,
@@ -582,7 +566,6 @@ impl Amm for DarklakeAmm {
             .try_into()
             .map_err(|_| anyhow::anyhow!("Invalid public signals length"))?;
 
-        // check if cancel or settle
         let is_cancel = *min_out > *output;
 
         if !is_cancel {
@@ -728,7 +711,6 @@ impl Amm for DarklakeAmm {
             label,
         } = finalize_params;
 
-        // check if settle or cancel or slash
         let is_settle = *min_out <= *output;
         let is_slash = *current_slot > *deadline;
 
@@ -973,7 +955,7 @@ impl Amm for DarklakeAmm {
                 token_mint_y: *token_y,
                 token_mint_wsol: native_mint::ID,
                 token_mint_lp,
-                metadata_account, // lp
+                metadata_account,
                 metadata_account_x,
                 metadata_account_y,
                 user_token_account_x,
@@ -1001,21 +983,17 @@ impl Amm for DarklakeAmm {
 }
 
 impl DarklakeAmm {
-    /// Parse token account balance reliably for both SPL and Token2022 tokens
     fn parse_token_account_balance(
         account_data: &[u8],
         account_owner: &Pubkey,
         token_account_pubkey: &Pubkey,
     ) -> Result<u64> {
-        // Check which token program owns the account and parse accordingly
         match account_owner {
             owner if *owner == spl_token::ID => {
-                // SPL Token account - use proper unpacking
                 let token_account = SplTokenAccount::unpack(&account_data)?;
                 Ok(token_account.amount)
             }
             owner if *owner == spl_token_2022::ID => {
-                // Token2022 account - use StateWithExtensions for proper parsing
                 let token_account =
                     StateWithExtensions::<spl_token_2022::state::Account>::unpack(account_data)?;
                 Ok(token_account.base.amount)
@@ -1035,15 +1013,12 @@ impl DarklakeAmm {
         mint_account_data: &[u8],
         mint_owner: &Pubkey,
     ) -> Result<Option<TransferFeeConfig>, ()> {
-        // Only Token2022 tokens can have transfer fee configs
         if *mint_owner != spl_token_2022::ID {
             return Ok(None);
         }
 
-        // Try to parse as Token2022 mint, but handle errors gracefully
         match StateWithExtensions::<spl_token_2022::state::Mint>::unpack(mint_account_data) {
             Ok(mint) => {
-                // Successfully parsed as Token2022 mint, try to get transfer fee config
                 match mint.get_extension::<TransferFeeConfig>() {
                     Ok(transfer_fee_config) => Ok(Some(transfer_fee_config.clone())),
                     Err(_) => Ok(None), // Extension not found or error getting it

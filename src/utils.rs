@@ -43,7 +43,6 @@ pub(crate) fn get_wrap_sol_to_wsol_instructions(
 ) -> Result<Vec<Instruction>> {
     let mut instructions = Vec::new();
 
-    // not other tokens can get wrapped only SOL -> WSOL
     let token_mint_wsol = native_mint::ID;
     let token_program_id = spl_token::ID;
 
@@ -53,9 +52,9 @@ pub(crate) fn get_wrap_sol_to_wsol_instructions(
     // 2. Create instructions (in case the WSOL ATA doesn't exist)
     let create_ata_ix =
         spl_associated_token_account::instruction::create_associated_token_account_idempotent(
-            &payer,           // funding payer
-            &payer,           // owner of token account
-            &token_mint_wsol, // wrapped SOL mint
+            &payer,
+            &payer,
+            &token_mint_wsol,
             &token_program_id,
         );
 
@@ -78,20 +77,13 @@ pub(crate) fn get_close_wsol_instructions(payer: Pubkey) -> Result<Vec<Instructi
     let token_mint_wsol = native_mint::ID;
     let token_program_id = spl_token::ID;
 
-    // Get the associated token account for WSOL
     let wsol_ata = get_associated_token_address(&payer, &token_mint_wsol);
 
     // 1. Sync the ATA to ensure all lamports are accounted for
     let sync_native_ix = sync_native(&token_program_id, &wsol_ata)?;
 
     // 3. Close the WSOL token account
-    let close_account_ix = close_account(
-        &token_program_id,
-        &wsol_ata,
-        &payer, // destination for reclaimed rent
-        &payer, // authority
-        &[],    // multisig signers
-    )?;
+    let close_account_ix = close_account(&token_program_id, &wsol_ata, &payer, &payer, &[])?;
 
     instructions.push(sync_native_ix);
     instructions.push(close_account_ix);
@@ -122,7 +114,6 @@ pub async fn get_address_lookup_table(
         MAINNET_LOOKUP
     };
 
-    // Fetch the address lookup table
     let alt_account = rpc_client
         .get_account(&alt_pubkey)
         .await
