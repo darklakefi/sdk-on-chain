@@ -38,7 +38,7 @@ pub(crate) fn generate_random_salt() -> [u8; 8] {
 }
 
 pub(crate) fn get_wrap_sol_to_wsol_instructions(
-    payer: Pubkey,
+    payer: &Pubkey,
     amount_in_lamports: u64,
 ) -> Result<Vec<Instruction>> {
     let mut instructions = Vec::new();
@@ -71,13 +71,13 @@ pub(crate) fn get_wrap_sol_to_wsol_instructions(
     Ok(instructions)
 }
 
-pub(crate) fn get_close_wsol_instructions(payer: Pubkey) -> Result<Vec<Instruction>> {
+pub(crate) fn get_close_wsol_instructions(payer: &Pubkey) -> Result<Vec<Instruction>> {
     let mut instructions = Vec::new();
 
     let token_mint_wsol = native_mint::ID;
     let token_program_id = spl_token::ID;
 
-    let wsol_ata = get_associated_token_address(&payer, &token_mint_wsol);
+    let wsol_ata = get_associated_token_address(payer, &token_mint_wsol);
 
     // 1. Sync the ATA to ensure all lamports are accounted for
     let sync_native_ix = sync_native(&token_program_id, &wsol_ata)?;

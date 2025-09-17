@@ -312,7 +312,7 @@ pub use reduced_amm_params::{
     SwapParamsIx,
 };
 
-pub use darklake_amm::{Order};
+pub use darklake_amm::Order;
 
 pub use amm::SwapMode;
 

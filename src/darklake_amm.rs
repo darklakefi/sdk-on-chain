@@ -914,7 +914,7 @@ impl Amm for DarklakeAmm {
         } = initialize_pool_params;
 
         let authority = AUTHORITY.key();
-        let pool_address = DarklakeAmm::get_pool_address(*token_x, *token_y);
+        let pool_address = DarklakeAmm::get_pool_address(token_x, token_y);
 
         let user_token_account_x =
             DarklakeAmm::get_user_token_account(*user, *token_x, *token_x_program);
@@ -1072,7 +1072,7 @@ impl DarklakeAmm {
         .0
     }
 
-    pub fn get_pool_address(token_mint_x: Pubkey, token_mint_y: Pubkey) -> Pubkey {
+    pub fn get_pool_address(token_mint_x: &Pubkey, token_mint_y: &Pubkey) -> Pubkey {
         Pubkey::find_program_address(
             &[
                 POOL_SEED,

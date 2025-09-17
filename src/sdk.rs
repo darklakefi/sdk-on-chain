@@ -144,28 +144,28 @@ impl DarklakeSDK {
     /// Returns a `Quote` containing the expected output amount and other swap details
     pub async fn quote(
         &mut self,
-        token_in: Pubkey,
-        token_out: Pubkey,
+        token_in: &Pubkey,
+        token_out: &Pubkey,
         amount_in: u64,
     ) -> Result<Quote> {
-        let is_from_sol = token_in == SOL_MINT;
-        let is_to_sol = token_out == SOL_MINT;
+        let is_from_sol = *token_in == SOL_MINT;
+        let is_to_sol = *token_out == SOL_MINT;
 
         let _token_in = if is_from_sol {
             native_mint::ID
         } else {
-            token_in
+            token_in.clone()
         };
         let _token_out = if is_to_sol {
             native_mint::ID
         } else {
-            token_out
+            token_out.clone()
         };
 
-        let (pool_key, _token_x, _token_y) = Self::get_pool_address(_token_in, _token_out);
+        let (pool_key, _token_x, _token_y) = Self::get_pool_address(&_token_in, &_token_out);
 
         if self.darklake_amm.key() != pool_key {
-            self.load_pool(_token_x, _token_y).await?;
+            self.load_pool(&_token_x, &_token_y).await?;
         }
 
         self.update_accounts().await?;
@@ -190,30 +190,30 @@ impl DarklakeSDK {
     /// Returns the tx signature of the executed swap
     pub async fn swap_tx(
         &mut self,
-        token_in: Pubkey,
-        token_out: Pubkey,
+        token_in: &Pubkey,
+        token_out: &Pubkey,
         amount_in: u64,
         min_amount_out: u64,
-        token_owner: Pubkey,
+        token_owner: &Pubkey,
     ) -> Result<(VersionedTransaction, Pubkey, u64, [u8; 8])> {
-        let is_from_sol = token_in == SOL_MINT;
-        let is_to_sol = token_out == SOL_MINT;
+        let is_from_sol = *token_in == SOL_MINT;
+        let is_to_sol = *token_out == SOL_MINT;
 
         let _token_in = if is_from_sol {
             native_mint::ID
         } else {
-            token_in
+            token_in.clone()
         };
         let _token_out = if is_to_sol {
             native_mint::ID
         } else {
-            token_out
+            token_out.clone()
         };
 
-        let (pool_key, _token_x, _token_y) = Self::get_pool_address(_token_in, _token_out);
+        let (pool_key, _token_x, _token_y) = Self::get_pool_address(&_token_in, &_token_out);
 
         if self.darklake_amm.key() != pool_key {
-            self.load_pool(_token_x, _token_y).await?;
+            self.load_pool(&_token_x, &_token_y).await?;
         }
 
         self.update_accounts().await?;
@@ -223,14 +223,14 @@ impl DarklakeSDK {
         let swap_params = SwapParamsIx {
             source_mint: _token_in,
             destination_mint: _token_out,
-            token_transfer_authority: token_owner,
+            token_transfer_authority: token_owner.clone(),
             in_amount: amount_in,
             swap_mode: SwapMode::ExactIn,
             min_out: min_amount_out,
             salt,
         };
 
-        let swap_instruction = self.swap_ix(swap_params)?;
+        let swap_instruction = self.swap_ix(&swap_params)?;
 
         let compute_budget_ix = ComputeBudgetInstruction::set_compute_unit_limit(300_000);
 
@@ -241,7 +241,7 @@ impl DarklakeSDK {
 
         if is_from_sol {
             let sol_to_wsol_instructions =
-                get_wrap_sol_to_wsol_instructions(token_owner, amount_in)?;
+                get_wrap_sol_to_wsol_instructions(&token_owner, amount_in)?;
             instructions.push(sol_to_wsol_instructions[0].clone());
             instructions.push(sol_to_wsol_instructions[1].clone());
             instructions.push(sol_to_wsol_instructions[2].clone());
@@ -269,11 +269,11 @@ impl DarklakeSDK {
 
     pub async fn finalize_tx(
         &mut self,
-        order_key: Pubkey,
+        order_key: &Pubkey,
         unwrap_wsol: bool,
         min_out: u64,
         salt: [u8; 8],
-        settle_signer: Option<Pubkey>,
+        settle_signer: Option<&Pubkey>,
     ) -> Result<VersionedTransaction> {
         // Retry getting order data 5 times every 5 seconds
         let mut order_data = None;
@@ -310,7 +310,7 @@ impl DarklakeSDK {
 
         self.update_accounts().await?;
 
-        let settler = settle_signer.unwrap_or(order.trader);
+        let settler = settle_signer.unwrap_or(&order.trader);
         let create_wsol_ata_ix =
             spl_associated_token_account::instruction::create_associated_token_account_idempotent(
                 &settler,
@@ -320,21 +320,21 @@ impl DarklakeSDK {
             );
 
         let finalize_params = FinalizeParamsIx {
-            settle_signer: settler,    // who settles the order
-            order_owner: order.trader, // who owns the order
-            unwrap_wsol,               // Set to true if you want to unwrap WSOL to SOL
-            min_out,                   // Same min_out as swap
-            salt,                      // Same salt as swap
-            output: order.d_out,       // order prop
-            commitment: order.c_min,   // order prop
-            deadline: order.deadline,  // order prop
+            settle_signer: settler.clone(), // who settles the order
+            order_owner: order.trader,      // who owns the order
+            unwrap_wsol,                    // Set to true if you want to unwrap WSOL to SOL
+            min_out,                        // Same min_out as swap
+            salt,                           // Same salt as swap
+            output: order.d_out,            // order prop
+            commitment: order.c_min,        // order prop
+            deadline: order.deadline,       // order prop
             current_slot: self
                 .rpc_client
                 .get_slot_with_commitment(CommitmentConfig::processed())
                 .await?,
         };
 
-        let finalize_instruction = self.finalize_ix(finalize_params)?;
+        let finalize_instruction = self.finalize_ix(&finalize_params)?;
 
         let compute_budget_ix = ComputeBudgetInstruction::set_compute_unit_limit(500_000);
 
@@ -361,21 +361,29 @@ impl DarklakeSDK {
 
     pub async fn add_liquidity_tx(
         &mut self,
-        token_x: Pubkey,
-        token_y: Pubkey,
+        token_x: &Pubkey,
+        token_y: &Pubkey,
         max_amount_x: u64,
         max_amount_y: u64,
         amount_lp: u64,
-        user: Pubkey,
+        user: &Pubkey,
     ) -> Result<VersionedTransaction> {
-        let is_x_sol = token_x == SOL_MINT;
-        let is_y_sol = token_y == SOL_MINT;
+        let is_x_sol = *token_x == SOL_MINT;
+        let is_y_sol = *token_y == SOL_MINT;
 
-        let token_x_post_sol = if is_x_sol { native_mint::ID } else { token_x };
-        let token_y_post_sol = if is_y_sol { native_mint::ID } else { token_y };
+        let token_x_post_sol = if is_x_sol {
+            native_mint::ID
+        } else {
+            token_x.clone()
+        };
+        let token_y_post_sol = if is_y_sol {
+            native_mint::ID
+        } else {
+            token_y.clone()
+        };
 
         let (pool_key, _token_x, _token_y) =
-            Self::get_pool_address(token_x_post_sol, token_y_post_sol);
+            Self::get_pool_address(&token_x_post_sol, &token_y_post_sol);
 
         let (max_amount_x, max_amount_y) = if _token_x != token_x_post_sol {
             (max_amount_y, max_amount_x)
@@ -384,7 +392,7 @@ impl DarklakeSDK {
         };
 
         if self.darklake_amm.key() != pool_key {
-            self.load_pool(_token_x, _token_y).await?;
+            self.load_pool(&_token_x, &_token_y).await?;
         }
 
         self.update_accounts().await?;
@@ -393,19 +401,19 @@ impl DarklakeSDK {
             amount_lp,
             max_amount_x,
             max_amount_y,
-            user,
+            user: user.clone(),
         };
 
-        let add_liquidity_instruction = self.add_liquidity_ix(add_liquidity_params)?;
+        let add_liquidity_instruction = self.add_liquidity_ix(&add_liquidity_params)?;
 
         let mut instructions = vec![];
         if is_x_sol {
-            let sol_to_wsol_instructions = get_wrap_sol_to_wsol_instructions(user, max_amount_x)?;
+            let sol_to_wsol_instructions = get_wrap_sol_to_wsol_instructions(&user, max_amount_x)?;
             instructions.push(sol_to_wsol_instructions[0].clone());
             instructions.push(sol_to_wsol_instructions[1].clone());
             instructions.push(sol_to_wsol_instructions[2].clone());
         } else if is_y_sol {
-            let sol_to_wsol_instructions = get_wrap_sol_to_wsol_instructions(user, max_amount_y)?;
+            let sol_to_wsol_instructions = get_wrap_sol_to_wsol_instructions(&user, max_amount_y)?;
             instructions.push(sol_to_wsol_instructions[0].clone());
             instructions.push(sol_to_wsol_instructions[1].clone());
             instructions.push(sol_to_wsol_instructions[2].clone());
@@ -434,21 +442,29 @@ impl DarklakeSDK {
 
     pub async fn remove_liquidity_tx(
         &mut self,
-        token_x: Pubkey,
-        token_y: Pubkey,
+        token_x: &Pubkey,
+        token_y: &Pubkey,
         min_amount_x: u64,
         min_amount_y: u64,
         amount_lp: u64,
-        user: Pubkey,
+        user: &Pubkey,
     ) -> Result<VersionedTransaction> {
-        let is_x_sol = token_x == SOL_MINT;
-        let is_y_sol = token_y == SOL_MINT;
+        let is_x_sol = *token_x == SOL_MINT;
+        let is_y_sol = *token_y == SOL_MINT;
 
-        let token_x_post_sol = if is_x_sol { native_mint::ID } else { token_x };
-        let token_y_post_sol = if is_y_sol { native_mint::ID } else { token_y };
+        let token_x_post_sol = if is_x_sol {
+            native_mint::ID
+        } else {
+            token_x.clone()
+        };
+        let token_y_post_sol = if is_y_sol {
+            native_mint::ID
+        } else {
+            token_y.clone()
+        };
 
         let (pool_key, _token_x, _token_y) =
-            Self::get_pool_address(token_x_post_sol, token_y_post_sol);
+            Self::get_pool_address(&token_x_post_sol, &token_y_post_sol);
 
         let (min_amount_x, min_amount_y) = if _token_x != token_x_post_sol {
             (min_amount_y, min_amount_x)
@@ -457,7 +473,7 @@ impl DarklakeSDK {
         };
 
         if self.darklake_amm.key() != pool_key {
-            self.load_pool(_token_x, _token_y).await?;
+            self.load_pool(&_token_x, &_token_y).await?;
         }
 
         self.update_accounts().await?;
@@ -467,16 +483,16 @@ impl DarklakeSDK {
         // make sure the user has the token accounts
         let create_token_x_ata_ix =
             spl_associated_token_account::instruction::create_associated_token_account_idempotent(
-                &user,
-                &user,
+                user,
+                user,
                 &_token_x,
                 &token_x_owner,
             );
 
         let create_token_y_ata_ix =
             spl_associated_token_account::instruction::create_associated_token_account_idempotent(
-                &user,
-                &user,
+                user,
+                user,
                 &_token_y,
                 &token_y_owner,
             );
@@ -485,10 +501,10 @@ impl DarklakeSDK {
             amount_lp,
             min_amount_x,
             min_amount_y,
-            user,
+            user: user.clone(),
         };
 
-        let remove_liquidity_instruction = self.remove_liquidity_ix(remove_liquidity_params)?;
+        let remove_liquidity_instruction = self.remove_liquidity_ix(&remove_liquidity_params)?;
 
         let mut instructions = vec![
             create_token_x_ata_ix,
@@ -524,21 +540,29 @@ impl DarklakeSDK {
 
     pub async fn initialize_pool_tx(
         &mut self,
-        token_x: Pubkey,
-        token_y: Pubkey,
+        token_x: &Pubkey,
+        token_y: &Pubkey,
         amount_x: u64,
         amount_y: u64,
-        user: Pubkey,
+        user: &Pubkey,
     ) -> Result<VersionedTransaction> {
-        let is_x_sol = token_x == SOL_MINT;
-        let is_y_sol = token_y == SOL_MINT;
+        let is_x_sol = *token_x == SOL_MINT;
+        let is_y_sol = *token_y == SOL_MINT;
 
-        let token_x_post_sol = if is_x_sol { native_mint::ID } else { token_x };
-        let token_y_post_sol = if is_y_sol { native_mint::ID } else { token_y };
+        let token_x_post_sol = if is_x_sol {
+            native_mint::ID
+        } else {
+            token_x.clone()
+        };
+        let token_y_post_sol = if is_y_sol {
+            native_mint::ID
+        } else {
+            token_y.clone()
+        };
 
         // used to sort token mints
         let (_pool_key, _token_x, _token_y) =
-            Self::get_pool_address(token_x_post_sol, token_y_post_sol);
+            Self::get_pool_address(&token_x_post_sol, &token_y_post_sol);
 
         let (amount_x, amount_y) = if _token_x != token_x_post_sol {
             (amount_y, amount_x)
@@ -550,7 +574,7 @@ impl DarklakeSDK {
         let token_y_account = self.rpc_client.get_account(&_token_y).await?;
 
         let initialize_pool_params = InitializePoolParamsIx {
-            user,
+            user: user.clone(),
             token_x: _token_x,
             token_x_program: token_x_account.owner,
             token_y: _token_y,
@@ -562,7 +586,7 @@ impl DarklakeSDK {
         let compute_budget_ix: Instruction =
             ComputeBudgetInstruction::set_compute_unit_limit(500_000);
 
-        let initialize_pool_instruction = self.initialize_pool_ix(initialize_pool_params)?;
+        let initialize_pool_instruction = self.initialize_pool_ix(&initialize_pool_params)?;
 
         let mut instructions = vec![compute_budget_ix];
         if is_x_sol {
@@ -605,8 +629,8 @@ impl DarklakeSDK {
 
     pub async fn load_pool(
         &mut self,
-        token_x: Pubkey,
-        token_y: Pubkey,
+        token_x: &Pubkey,
+        token_y: &Pubkey,
     ) -> Result<(Pubkey, Pubkey, Pubkey)> {
         let (pool_key, _, _) = Self::get_pool_address(token_x, token_y);
 
@@ -627,7 +651,7 @@ impl DarklakeSDK {
         self.darklake_amm = DarklakeAmm::load_pool(&pool_key_and_account)?;
 
         // returns sorted token mints
-        Ok((pool_key, token_x, token_y))
+        Ok((pool_key, token_x.clone(), token_y.clone()))
     }
 
     pub async fn update_accounts(&mut self) -> Result<()> {
@@ -677,7 +701,7 @@ impl DarklakeSDK {
         Ok(order)
     }
 
-    pub fn swap_ix(&mut self, swap_params: SwapParamsIx) -> Result<Instruction> {
+    pub fn swap_ix(&mut self, swap_params: &SwapParamsIx) -> Result<Instruction> {
         let swap_params = SwapParams {
             source_mint: swap_params.source_mint,
             destination_mint: swap_params.destination_mint,
@@ -701,7 +725,7 @@ impl DarklakeSDK {
         })
     }
 
-    pub fn finalize_ix(&mut self, finalize_params: FinalizeParamsIx) -> Result<Instruction> {
+    pub fn finalize_ix(&mut self, finalize_params: &FinalizeParamsIx) -> Result<Instruction> {
         let finalize_params = FinalizeParams {
             settle_signer: finalize_params.settle_signer,
             order_owner: finalize_params.order_owner,
@@ -735,7 +759,7 @@ impl DarklakeSDK {
 
     pub fn add_liquidity_ix(
         &mut self,
-        add_liquidity_params: AddLiquidityParamsIx,
+        add_liquidity_params: &AddLiquidityParamsIx,
     ) -> Result<Instruction> {
         let add_liquidity_params = AddLiquidityParams {
             amount_lp: add_liquidity_params.amount_lp,
@@ -759,7 +783,7 @@ impl DarklakeSDK {
 
     pub fn remove_liquidity_ix(
         &mut self,
-        remove_liquidity_params: RemoveLiquidityParamsIx,
+        remove_liquidity_params: &RemoveLiquidityParamsIx,
     ) -> Result<Instruction> {
         let remove_liquidity_params = RemoveLiquidityParams {
             amount_lp: remove_liquidity_params.amount_lp,
@@ -782,7 +806,7 @@ impl DarklakeSDK {
 
     pub fn initialize_pool_ix(
         &mut self,
-        initialize_pool_params: InitializePoolParamsIx,
+        initialize_pool_params: &InitializePoolParamsIx,
     ) -> Result<Instruction> {
         let initialize_pool_params = InitializePoolParams {
             user: initialize_pool_params.user,
@@ -808,7 +832,7 @@ impl DarklakeSDK {
 
     /// Helpers internal methods
     /// Get the pool address for a token pair
-    fn get_pool_address(token_mint_x: Pubkey, token_mint_y: Pubkey) -> (Pubkey, Pubkey, Pubkey) {
+    fn get_pool_address(token_mint_x: &Pubkey, token_mint_y: &Pubkey) -> (Pubkey, Pubkey, Pubkey) {
         let (ordered_x, ordered_y) = if token_mint_x < token_mint_y {
             (token_mint_x, token_mint_y)
         } else {
@@ -817,6 +841,6 @@ impl DarklakeSDK {
 
         let pool_key = crate::darklake_amm::DarklakeAmm::get_pool_address(ordered_x, ordered_y);
 
-        (pool_key, ordered_x, ordered_y)
+        (pool_key, ordered_x.clone(), ordered_y.clone())
     }
 }
