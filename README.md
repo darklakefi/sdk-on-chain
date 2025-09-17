@@ -1,4 +1,6 @@
-# Darklake DEX SDK
+# Darklake DEX on-chain SDK
+
+[![Darklake-SDK](https://img.shields.io/badge/Darklake-SDK-010f06?labelColor=35d688)](https://darklake.fi/) [![SDK Version](https://img.shields.io/badge/dynamic/toml?url=https%3A%2F%2Fraw.githubusercontent.com%2Fdarklakefi%2Fsdk-on-chain%2Fdevelop%2FCargo.toml&query=%24.package.version&label=SDK%20Version)](Cargo.toml)
 
 A standalone SDK for interacting with Darklake AMM pools on Solana. This SDK provides two main usage flows:
 

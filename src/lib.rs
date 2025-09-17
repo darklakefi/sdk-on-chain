@@ -1,4 +1,4 @@
-//! # Darklake DEX SDK
+//! # Darklake DEX on-chain SDK
 //!
 //! A standalone SDK for interacting with Darklake AMM pools on Solana. This SDK provides two main usage flows:
 //!
