@@ -312,6 +312,8 @@ pub use reduced_amm_params::{
     SwapParamsIx,
 };
 
+pub use darklake_amm::{Order};
+
 pub use amm::SwapMode;
 
 pub use constants::{DEVNET_LOOKUP, MAINNET_LOOKUP};
