@@ -650,7 +650,7 @@ impl DarklakeSDK {
 
     // does not require load_pool or update_accounts is a standalone function after new() is called
     pub async fn get_order(
-        &mut self,
+        &self,
         user: Pubkey,
         commitment_level: CommitmentLevel,
     ) -> Result<Order> {
