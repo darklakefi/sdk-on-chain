@@ -1,10 +1,17 @@
 use anchor_lang::{solana_program::example_mocks::solana_sdk::system_instruction, Result};
 use anchor_spl::token::spl_token::instruction::{close_account, sync_native};
+use anyhow::Result as AnyhowResult;
 use password_hash::rand_core::{OsRng, RngCore};
-use solana_sdk::{clock::Clock, instruction::Instruction, pubkey::Pubkey, sysvar::Sysvar};
+use solana_rpc_client::nonblocking::rpc_client::RpcClient;
+use solana_sdk::{
+    address_lookup_table::state::AddressLookupTable, clock::Clock, instruction::Instruction,
+    message::AddressLookupTableAccount, pubkey::Pubkey, sysvar::Sysvar,
+};
 use spl_associated_token_account::get_associated_token_address;
 use spl_token::native_mint;
 use spl_token_2022::extension::transfer_fee::TransferFeeConfig;
+
+use crate::{constants::DEVNET_LOOKUP, MAINNET_LOOKUP};
 
 pub(crate) fn get_transfer_fee(
     transfer_fee_config: Option<TransferFeeConfig>,
@@ -31,12 +38,11 @@ pub(crate) fn generate_random_salt() -> [u8; 8] {
 }
 
 pub(crate) fn get_wrap_sol_to_wsol_instructions(
-    payer: Pubkey,
+    payer: &Pubkey,
     amount_in_lamports: u64,
 ) -> Result<Vec<Instruction>> {
     let mut instructions = Vec::new();
 
-    // not other tokens can get wrapped only SOL -> WSOL
     let token_mint_wsol = native_mint::ID;
     let token_program_id = spl_token::ID;
 
@@ -46,9 +52,9 @@ pub(crate) fn get_wrap_sol_to_wsol_instructions(
     // 2. Create instructions (in case the WSOL ATA doesn't exist)
     let create_ata_ix =
         spl_associated_token_account::instruction::create_associated_token_account_idempotent(
-            &payer,           // funding payer
-            &payer,           // owner of token account
-            &token_mint_wsol, // wrapped SOL mint
+            &payer,
+            &payer,
+            &token_mint_wsol,
             &token_program_id,
         );
 
@@ -65,29 +71,60 @@ pub(crate) fn get_wrap_sol_to_wsol_instructions(
     Ok(instructions)
 }
 
-pub(crate) fn get_close_wsol_instructions(payer: Pubkey) -> Result<Vec<Instruction>> {
+pub(crate) fn get_close_wsol_instructions(payer: &Pubkey) -> Result<Vec<Instruction>> {
     let mut instructions = Vec::new();
 
     let token_mint_wsol = native_mint::ID;
     let token_program_id = spl_token::ID;
 
-    // Get the associated token account for WSOL
-    let wsol_ata = get_associated_token_address(&payer, &token_mint_wsol);
+    let wsol_ata = get_associated_token_address(payer, &token_mint_wsol);
 
     // 1. Sync the ATA to ensure all lamports are accounted for
     let sync_native_ix = sync_native(&token_program_id, &wsol_ata)?;
 
     // 3. Close the WSOL token account
-    let close_account_ix = close_account(
-        &token_program_id,
-        &wsol_ata,
-        &payer, // destination for reclaimed rent
-        &payer, // authority
-        &[],    // multisig signers
-    )?;
+    let close_account_ix = close_account(&token_program_id, &wsol_ata, &payer, &payer, &[])?;
 
     instructions.push(sync_native_ix);
     instructions.push(close_account_ix);
 
     Ok(instructions)
+}
+
+pub fn convert_string_to_bytes_array(s: &str, length: usize) -> AnyhowResult<Vec<u8>> {
+    let mut bytes = s.to_string().into_bytes();
+    if bytes.len() > length {
+        return Err(anyhow::anyhow!(
+            "String length must be less than or equal to {}.",
+            length
+        ));
+    }
+
+    bytes.resize(length, 0u8);
+    Ok(bytes)
+}
+
+pub async fn get_address_lookup_table(
+    rpc_client: &RpcClient,
+    is_devnet: bool,
+) -> AnyhowResult<AddressLookupTableAccount> {
+    let alt_pubkey = if is_devnet {
+        DEVNET_LOOKUP
+    } else {
+        MAINNET_LOOKUP
+    };
+
+    let alt_account = rpc_client
+        .get_account(&alt_pubkey)
+        .await
+        .map_err(|e| anyhow::anyhow!("Failed to get address lookup table: {}", e))?;
+
+    let table = AddressLookupTable::deserialize(&alt_account.data)?;
+
+    let address_lookup_table = AddressLookupTableAccount {
+        key: alt_pubkey,
+        addresses: table.addresses.to_vec(),
+    };
+
+    Ok(address_lookup_table)
 }

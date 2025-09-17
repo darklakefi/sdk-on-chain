@@ -49,42 +49,38 @@ pub(crate) struct DarklakeAmm {
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Default)]
 pub struct AmmConfig {
-    pub trade_fee_rate: u64,    // 10^6 = 100%
-    pub create_pool_fee: u64,   // flat SOL fee for creating a pool
-    pub protocol_fee_rate: u64, // 10^6 = 100% (precentage of trade fee)
+    pub trade_fee_rate: u64,
+    pub create_pool_fee: u64,
+    pub protocol_fee_rate: u64,
 
-    pub wsol_trade_deposit: u64, // this should AT LEAST be the size of tx fee + any account creation fees
+    pub wsol_trade_deposit: u64,
 
     pub deadline_slot_duration: u64,
 
-    pub ratio_change_tolerance_rate: u64, // 10^6 = 100%
+    pub ratio_change_tolerance_rate: u64,
 
     pub bump: u8,
-    pub halted: bool, // if true, no actions are allowed
+    pub halted: bool,
 
-    /// padding
     pub padding: [u64; 16],
 }
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone)]
 pub struct Order {
-    // pubkeys
     pub trader: Pubkey,
     pub token_mint_x: Pubkey,
     pub token_mint_y: Pubkey,
 
-    // quantities
-    pub actual_in: u64,    // amount taken from user
-    pub exchange_in: u64,  // amount received by the pool (post token fees)
-    pub actual_out: u64,   // amount received by user
-    pub from_to_lock: u64, // amount locked in the pool
-    pub d_in: u64,         // locked_x
-    pub d_out: u64,        // locked_y
+    pub actual_in: u64,
+    pub exchange_in: u64,
+    pub actual_out: u64,
+    pub from_to_lock: u64,
+    pub d_in: u64,
+    pub d_out: u64,
     pub deadline: u64,
     pub protocol_fee: u64,
     pub wsol_deposit: u64,
 
-    // proof
     pub c_min: [u8; 32],
 
     pub is_x_to_y: bool,
@@ -95,7 +91,6 @@ pub struct Order {
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Default)]
 pub struct Pool {
-    // pubkeys
     pub creator: Pubkey,
     pub amm_config: Pubkey,
 
@@ -105,12 +100,10 @@ pub struct Pool {
     pub reserve_x: Pubkey,
     pub reserve_y: Pubkey,
 
-    // quanities
     pub token_lp_supply: u64,
     pub protocol_fee_x: u64,
     pub protocol_fee_y: u64,
 
-    // locked for existing orders
     pub locked_x: u64,
     pub locked_y: u64,
 
@@ -165,11 +158,11 @@ impl Amm for DarklakeAmm {
     fn get_accounts_to_update(&self) -> Vec<Pubkey> {
         vec![
             self.key,
-            self.pool.token_mint_x, // tokens (need owners)
+            self.pool.token_mint_x,
             self.pool.token_mint_y,
-            self.pool.reserve_x, // pool token reserves
+            self.pool.reserve_x,
             self.pool.reserve_y,
-            self.pool.amm_config, // config with fee values
+            self.pool.amm_config,
         ]
     }
 
@@ -190,7 +183,6 @@ impl Amm for DarklakeAmm {
         let (token_y_data, token_y_owner) =
             try_get_account_data_and_owner(account_map, &self.pool.reserve_y)?;
 
-        // Parse token account balances reliably for both SPL and Token2022 tokens
         self.reserve_x_balance =
             Self::parse_token_account_balance(&token_x_data, &token_x_owner, &self.pool.reserve_x)?;
         self.reserve_y_balance =
@@ -280,6 +272,7 @@ impl Amm for DarklakeAmm {
             token_transfer_authority,
             salt,
             min_out,
+            label,
             ..
         } = swap_params;
 
@@ -303,9 +296,7 @@ impl Amm for DarklakeAmm {
         );
 
         let pool_wsol_reserve = DarklakeAmm::get_pool_wsol_reserve(self.key);
-        let order = self.get_order(*token_transfer_authority);
-
-        // ADD C_MIN COMMITMENT CALCULATION HERE
+        let order = self.get_order(token_transfer_authority);
 
         let commitment = to_32_byte_buffer(&bytes_to_bigint(&u64_array_to_u8_array_le(
             &compute_poseidon_hash_with_salt(*min_out, *salt),
@@ -317,6 +308,8 @@ impl Amm for DarklakeAmm {
         data.extend_from_slice(&swap_params.in_amount.to_le_bytes());
         data.extend_from_slice(&[is_swap_x_to_y as u8]);
         data.extend_from_slice(&commitment);
+        let serialized_label = label.try_to_vec()?;
+        data.extend_from_slice(&serialized_label);
 
         Ok(SwapAndAccountMetas {
             discriminator,
@@ -324,6 +317,7 @@ impl Amm for DarklakeAmm {
                 amount_in: swap_params.in_amount,
                 is_swap_x_to_y,
                 c_min: commitment,
+                label: *label,
             },
             data,
             account_metas: DarklakeAmmSwap {
@@ -359,9 +353,7 @@ impl Amm for DarklakeAmm {
         !self.amm_config.halted
     }
 
-    // darklake specific settlement-related functions
-
-    fn get_order_pubkey(&self, user: Pubkey) -> Result<Pubkey> {
+    fn get_order_pubkey(&self, user: &Pubkey) -> Result<Pubkey> {
         if self.key == Pubkey::default() {
             bail!("Darklake pool is not initialized");
         }
@@ -378,7 +370,6 @@ impl Amm for DarklakeAmm {
         Ok(order.deadline < current_slot)
     }
 
-    // both for settle
     fn get_settle_and_account_metas(
         &self,
         settle_params: &SettleParams,
@@ -394,6 +385,8 @@ impl Amm for DarklakeAmm {
             commitment,
             deadline,
             current_slot,
+            ref_code,
+            label,
         } = settle_params;
 
         if *current_slot > *deadline {
@@ -419,7 +412,7 @@ impl Amm for DarklakeAmm {
 
         let caller_token_account_wsol =
             DarklakeAmm::get_user_token_account(*settle_signer, native_mint::ID, spl_token::ID);
-        let order = self.get_order(*order_owner);
+        let order = self.get_order(order_owner);
         let order_token_account_wsol = self.get_order_token_account_wsol(*order_owner);
 
         let private_inputs = PrivateProofInputs {
@@ -432,7 +425,6 @@ impl Amm for DarklakeAmm {
             commitment: from_32_byte_buffer(&commitment),
         };
 
-        // ADD PROOF CALCULATION HERE
         let (proof, _) = generate_proof(
             &private_inputs,
             &public_inputs,
@@ -448,7 +440,6 @@ impl Amm for DarklakeAmm {
             .try_into()
             .map_err(|_| anyhow::anyhow!("Invalid public signals length"))?;
 
-        // check if cancel or settle
         let is_settle = *min_out <= *output;
 
         if !is_settle {
@@ -463,6 +454,10 @@ impl Amm for DarklakeAmm {
         data.extend_from_slice(&public_inputs_arr[0]);
         data.extend_from_slice(&public_inputs_arr[1]);
         data.extend_from_slice(&[*unwrap_wsol as u8]);
+        let serialized_ref_code = ref_code.try_to_vec()?;
+        data.extend_from_slice(&serialized_ref_code);
+        let serialized_label = label.try_to_vec()?;
+        data.extend_from_slice(&serialized_label);
 
         Ok(SettleAndAccountMetas {
             discriminator,
@@ -472,6 +467,8 @@ impl Amm for DarklakeAmm {
                 proof_c: solana_proof.proof_c,
                 public_signals: public_inputs_arr,
                 unwrap_wsol: *unwrap_wsol,
+                ref_code: *ref_code,
+                label: *label,
             },
             data,
             account_metas: DarklakeAmmSettle {
@@ -516,6 +513,7 @@ impl Amm for DarklakeAmm {
             commitment,
             deadline,
             current_slot,
+            label,
         } = cancel_params;
 
         if *current_slot > *deadline {
@@ -541,7 +539,7 @@ impl Amm for DarklakeAmm {
 
         let caller_token_account_wsol =
             DarklakeAmm::get_user_token_account(*settle_signer, native_mint::ID, spl_token::ID);
-        let order = self.get_order(*order_owner);
+        let order = self.get_order(order_owner);
 
         let private_inputs = PrivateProofInputs {
             min_out: *min_out,
@@ -553,7 +551,6 @@ impl Amm for DarklakeAmm {
             commitment: from_32_byte_buffer(&commitment),
         };
 
-        // ADD PROOF CALCULATION HERE
         let (proof, _) = generate_proof(
             &private_inputs,
             &public_inputs,
@@ -569,7 +566,6 @@ impl Amm for DarklakeAmm {
             .try_into()
             .map_err(|_| anyhow::anyhow!("Invalid public signals length"))?;
 
-        // check if cancel or settle
         let is_cancel = *min_out > *output;
 
         if !is_cancel {
@@ -584,6 +580,8 @@ impl Amm for DarklakeAmm {
         data.extend_from_slice(&solana_proof.proof_c);
         data.extend_from_slice(&public_inputs_arr[0]);
         data.extend_from_slice(&public_inputs_arr[1]);
+        let serialized_label = label.try_to_vec()?;
+        data.extend_from_slice(&serialized_label);
 
         Ok(CancelAndAccountMetas {
             discriminator,
@@ -592,6 +590,7 @@ impl Amm for DarklakeAmm {
                 proof_b: solana_proof.proof_b,
                 proof_c: solana_proof.proof_c,
                 public_signals: public_inputs_arr,
+                label: *label,
             },
             data,
             account_metas: DarklakeAmmCancel {
@@ -630,6 +629,7 @@ impl Amm for DarklakeAmm {
             order_owner,
             deadline,
             current_slot,
+            label,
         } = slash_params;
 
         if *current_slot <= *deadline {
@@ -653,15 +653,17 @@ impl Amm for DarklakeAmm {
 
         let caller_token_account_wsol =
             DarklakeAmm::get_user_token_account(*settle_signer, native_mint::ID, spl_token::ID);
-        let order = self.get_order(*order_owner);
+        let order = self.get_order(order_owner);
 
         let discriminator = [204, 141, 18, 161, 8, 177, 92, 142];
 
-        let data = discriminator.to_vec();
+        let mut data = discriminator.to_vec();
+        let serialized_label = label.try_to_vec()?;
+        data.extend_from_slice(&serialized_label);
 
         Ok(SlashAndAccountMetas {
             discriminator,
-            slash: DarklakeAmmSlashParams {},
+            slash: DarklakeAmmSlashParams { label: *label },
             data,
             account_metas: DarklakeAmmSlash {
                 caller: *settle_signer,
@@ -705,9 +707,10 @@ impl Amm for DarklakeAmm {
             commitment,
             deadline,
             current_slot,
+            ref_code,
+            label,
         } = finalize_params;
 
-        // check if settle or cancel or slash
         let is_settle = *min_out <= *output;
         let is_slash = *current_slot > *deadline;
 
@@ -718,6 +721,7 @@ impl Amm for DarklakeAmm {
                     order_owner: *order_owner,
                     deadline: *deadline,
                     current_slot: *current_slot,
+                    label: *label,
                 })?,
             ));
         } else if is_settle {
@@ -733,6 +737,8 @@ impl Amm for DarklakeAmm {
                         commitment: *commitment,
                         deadline: *deadline,
                         current_slot: *current_slot,
+                        ref_code: *ref_code,
+                        label: *label,
                     },
                     &settle_proof_params,
                 )?,
@@ -749,6 +755,7 @@ impl Amm for DarklakeAmm {
                         commitment: *commitment,
                         deadline: *deadline,
                         current_slot: *current_slot,
+                        label: *label,
                     },
                     &cancel_proof_params,
                 )?,
@@ -765,6 +772,8 @@ impl Amm for DarklakeAmm {
             max_amount_x,
             max_amount_y,
             user,
+            ref_code,
+            label,
         } = add_liquidity_params;
 
         let authority = AUTHORITY.key();
@@ -785,6 +794,10 @@ impl Amm for DarklakeAmm {
         data.extend_from_slice(&amount_lp.to_le_bytes());
         data.extend_from_slice(&max_amount_x.to_le_bytes());
         data.extend_from_slice(&max_amount_y.to_le_bytes());
+        let serialized_ref_code = ref_code.try_to_vec()?;
+        data.extend_from_slice(&serialized_ref_code);
+        let serialized_label = label.try_to_vec()?;
+        data.extend_from_slice(&serialized_label);
 
         Ok(AddLiquidityAndAccountMetas {
             discriminator,
@@ -792,6 +805,8 @@ impl Amm for DarklakeAmm {
                 amount_lp: *amount_lp,
                 max_amount_x: *max_amount_x,
                 max_amount_y: *max_amount_y,
+                ref_code: *ref_code,
+                label: *label,
             },
             data,
             account_metas: DarklakeAmmAddLiquidity {
@@ -826,6 +841,7 @@ impl Amm for DarklakeAmm {
             min_amount_x,
             min_amount_y,
             user,
+            label,
         } = remove_liquidity_params;
 
         let authority = AUTHORITY.key();
@@ -846,6 +862,8 @@ impl Amm for DarklakeAmm {
         data.extend_from_slice(&amount_lp.to_le_bytes());
         data.extend_from_slice(&min_amount_x.to_le_bytes());
         data.extend_from_slice(&min_amount_y.to_le_bytes());
+        let serialized_label = label.try_to_vec()?;
+        data.extend_from_slice(&serialized_label);
 
         Ok(RemoveLiquidityAndAccountMetas {
             discriminator,
@@ -853,6 +871,7 @@ impl Amm for DarklakeAmm {
                 amount_lp: *amount_lp,
                 min_amount_x: *min_amount_x,
                 min_amount_y: *min_amount_y,
+                label: *label,
             },
             data,
             account_metas: DarklakeAmmRemoveLiquidity {
@@ -891,10 +910,11 @@ impl Amm for DarklakeAmm {
             token_y_program,
             amount_x,
             amount_y,
+            label,
         } = initialize_pool_params;
 
         let authority = AUTHORITY.key();
-        let pool_address = DarklakeAmm::get_pool_address(*token_x, *token_y);
+        let pool_address = DarklakeAmm::get_pool_address(token_x, token_y);
 
         let user_token_account_x =
             DarklakeAmm::get_user_token_account(*user, *token_x, *token_x_program);
@@ -915,12 +935,15 @@ impl Amm for DarklakeAmm {
         let mut data = discriminator.to_vec();
         data.extend_from_slice(&amount_x.to_le_bytes());
         data.extend_from_slice(&amount_y.to_le_bytes());
+        let serialized_label = label.try_to_vec()?;
+        data.extend_from_slice(&serialized_label);
 
         Ok(InitializePoolAndAccountMetas {
             discriminator,
             initialize_pool: DarklakeAmmInitializePoolParams {
                 amount_x: *amount_x,
                 amount_y: *amount_y,
+                label: *label,
             },
             data,
             account_metas: DarklakeAmmInitializePool {
@@ -932,7 +955,7 @@ impl Amm for DarklakeAmm {
                 token_mint_y: *token_y,
                 token_mint_wsol: native_mint::ID,
                 token_mint_lp,
-                metadata_account, // lp
+                metadata_account,
                 metadata_account_x,
                 metadata_account_y,
                 user_token_account_x,
@@ -960,21 +983,17 @@ impl Amm for DarklakeAmm {
 }
 
 impl DarklakeAmm {
-    /// Parse token account balance reliably for both SPL and Token2022 tokens
     fn parse_token_account_balance(
         account_data: &[u8],
         account_owner: &Pubkey,
         token_account_pubkey: &Pubkey,
     ) -> Result<u64> {
-        // Check which token program owns the account and parse accordingly
         match account_owner {
             owner if *owner == spl_token::ID => {
-                // SPL Token account - use proper unpacking
                 let token_account = SplTokenAccount::unpack(&account_data)?;
                 Ok(token_account.amount)
             }
             owner if *owner == spl_token_2022::ID => {
-                // Token2022 account - use StateWithExtensions for proper parsing
                 let token_account =
                     StateWithExtensions::<spl_token_2022::state::Account>::unpack(account_data)?;
                 Ok(token_account.base.amount)
@@ -994,15 +1013,12 @@ impl DarklakeAmm {
         mint_account_data: &[u8],
         mint_owner: &Pubkey,
     ) -> Result<Option<TransferFeeConfig>, ()> {
-        // Only Token2022 tokens can have transfer fee configs
         if *mint_owner != spl_token_2022::ID {
             return Ok(None);
         }
 
-        // Try to parse as Token2022 mint, but handle errors gracefully
         match StateWithExtensions::<spl_token_2022::state::Mint>::unpack(mint_account_data) {
             Ok(mint) => {
-                // Successfully parsed as Token2022 mint, try to get transfer fee config
                 match mint.get_extension::<TransferFeeConfig>() {
                     Ok(transfer_fee_config) => Ok(Some(transfer_fee_config.clone())),
                     Err(_) => Ok(None), // Extension not found or error getting it
@@ -1036,7 +1052,7 @@ impl DarklakeAmm {
         .0
     }
 
-    fn get_order(&self, user: Pubkey) -> Pubkey {
+    fn get_order(&self, user: &Pubkey) -> Pubkey {
         Pubkey::find_program_address(
             &[ORDER_SEED, self.key.as_ref(), user.as_ref()],
             &self.program_id(),
@@ -1056,7 +1072,7 @@ impl DarklakeAmm {
         .0
     }
 
-    pub fn get_pool_address(token_mint_x: Pubkey, token_mint_y: Pubkey) -> Pubkey {
+    pub fn get_pool_address(token_mint_x: &Pubkey, token_mint_y: &Pubkey) -> Pubkey {
         Pubkey::find_program_address(
             &[
                 POOL_SEED,

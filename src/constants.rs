@@ -2,8 +2,6 @@ use anchor_client::solana_sdk::pubkey::Pubkey;
 use lazy_static::lazy_static;
 use solana_sdk::pubkey;
 
-// pub const MAX_PERCENTAGE: u64 = 1_000_000; // 100% in basis points
-
 pub const DARKLAKE_PROGRAM_ID: Pubkey = pubkey!("darkr3FB87qAZmgLwKov6Hk9Yiah5UT4rUYu8Zhthw1");
 
 pub const SOL_MINT: Pubkey = pubkey!("So11111111111111111111111111111111111111111");
@@ -13,7 +11,6 @@ pub const DEVNET_CREATE_POOL_FEE_VAULT: Pubkey =
 pub const MAINNET_CREATE_POOL_FEE_VAULT: Pubkey =
     pubkey!("HNQdnRgtnsgcx7E836nZ1JwrQstWBEJMnRVy8doY366A");
 
-// SEEDS
 pub const POOL_SEED: &[u8] = b"pool";
 pub const AMM_CONFIG_SEED: &[u8] = b"amm_config";
 pub const AUTHORITY_SEED: &[u8] = b"authority";
@@ -23,6 +20,9 @@ pub const LIQUIDITY_SEED: &[u8] = b"lp";
 pub const ORDER_WSOL_SEED: &[u8] = b"order_wsol";
 pub const METADATA_SEED: &[u8] = b"metadata";
 pub const POOL_RESERVE_SEED: &[u8] = b"pool_reserve";
+
+pub const DEVNET_LOOKUP: Pubkey = pubkey!("fUT5cRYT7RTS4kSq7ZpPwqaH7E68soubbutFxYHeNjo");
+pub const MAINNET_LOOKUP: Pubkey = pubkey!("2h3Sz2G84TcrqWc3FAyRZjjf5aCExMKM5sG3fh1bBXSg");
 
 lazy_static! {
     pub static ref AMM_CONFIG: Pubkey = Pubkey::find_program_address(

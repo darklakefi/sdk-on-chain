@@ -9,7 +9,6 @@ use num_bigint::BigUint;
 use num_traits::Num;
 
 use std::ops::Neg;
-use std::path::Path;
 type GrothBn = Groth16<Bn254, CircomReduction>;
 
 /// Represents the inputs for proof generation
@@ -199,16 +198,6 @@ fn g2_uncompressed(point: &G2Affine) -> [u8; 128] {
     out[96..128].copy_from_slice(&y0_bytes);
 
     out
-}
-
-pub fn create_circom_config(
-    wasm_path: &str,
-    r1cs_path: &str,
-) -> Result<CircomBuilder<ark_ff::Fp<ark_ff::MontBackend<ark_bn254::FrConfig, 4>, 4>>> {
-    let config = CircomConfig::new(wasm_path, r1cs_path)
-        .map_err(|e| anyhow::anyhow!("Failed to create circom config: {}", e))?;
-    let builder = CircomBuilder::new(config);
-    Ok(builder)
 }
 
 #[cfg(test)]
