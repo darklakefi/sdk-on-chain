@@ -1,8 +1,8 @@
 [package]
 name = "darklake-sdk-on-chain"
-version = "0.2.0"
+version = "0.2.1"
 description = "Darklake DEX SDK - A standalone SDK for interacting directly with Darklake AMM pools"
-edition = "2021"
+edition = "2024"
 authors = ["Darklake Team"]
 license = "MIT"
 
@@ -10,11 +10,10 @@ license = "MIT"
 anchor-client = { version = "0.31.1", features = ["async"] }
 anchor-lang = "0.31.1"
 anchor-spl = "0.31.1"
-solana-sdk = "2.2.1"
-solana-rpc-client = "2.2.1"
-solana-rpc-client-api = "2.2.1"
-solana-account-decoder = "2.2.1"
-solana-sdk-ids = "2.2.1"
+solana-sdk = "=2.1.0"
+solana-rpc-client = "2.1.0"
+solana-rpc-client-api = "2.1.0"
+solana-account-decoder = "2.1.0"
 solana-system-interface = "2.0.0"
 anyhow = "1.0.0"
 rust_decimal = "1.26.1"
@@ -26,9 +25,9 @@ dex-math = { git = "https://github.com/darklakefi/dex-math.git", branch = "main"
 lazy_static = "1.5.0"
 
 # SPL
-spl-token = { version = "8.0.0", features = ["no-entrypoint"] }
-spl-associated-token-account = { version = "7.0.0", features = ["no-entrypoint"] }
-spl-token-2022 = { version = "6.0.0", features = ["no-entrypoint"] }
+spl-token = { version = "5.0.0", features = ["no-entrypoint"] }
+spl-associated-token-account = { version = "6.0.0", features = ["no-entrypoint"] }
+spl-token-2022 = { version = "7.0.0", features = ["no-entrypoint"] }
 
 # Proof
 poseidon-ark = { git = "https://github.com/darklakefi/poseidon-ark.git", branch = "gateway" }
