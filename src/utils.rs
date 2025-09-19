@@ -1,17 +1,18 @@
-use anchor_lang::{solana_program::example_mocks::solana_sdk::system_instruction, Result};
+use anchor_lang::{Result, solana_program::example_mocks::solana_sdk::system_instruction};
 use anchor_spl::token::spl_token::instruction::{close_account, sync_native};
 use anyhow::Result as AnyhowResult;
 use password_hash::rand_core::{OsRng, RngCore};
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::{
+    address_lookup_table::AddressLookupTableAccount,
     address_lookup_table::state::AddressLookupTable, clock::Clock, instruction::Instruction,
-    address_lookup_table::AddressLookupTableAccount, pubkey::Pubkey, sysvar::Sysvar,
+    pubkey::Pubkey, sysvar::Sysvar,
 };
 use spl_associated_token_account::get_associated_token_address;
 use spl_token::native_mint;
 use spl_token_2022::extension::transfer_fee::TransferFeeConfig;
 
-use crate::{constants::DEVNET_LOOKUP, MAINNET_LOOKUP};
+use crate::constants::{DEVNET_LOOKUP, MAINNET_LOOKUP};
 
 pub(crate) fn get_transfer_fee(
     transfer_fee_config: Option<TransferFeeConfig>,

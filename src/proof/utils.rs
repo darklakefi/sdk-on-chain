@@ -27,7 +27,7 @@ pub fn compute_poseidon_hash_with_salt(min_out: u64, salt: [u8; 8]) -> [u64; 4] 
 
     let hash_output_bytes = pos.hash(inputs_for_poseidon).unwrap(); // Handle the Result
 
-    let hash = hash_output_bytes.0 .0;
+    let hash = hash_output_bytes.0.0;
 
     hash
 }
