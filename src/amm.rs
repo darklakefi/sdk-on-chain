@@ -2,7 +2,7 @@ use anchor_lang::prelude::AccountMeta;
 use anyhow::Result;
 use solana_sdk::pubkey::Pubkey;
 
-use crate::darklake_amm::Order;
+use crate::{darklake_amm::Order, proof::proof_generator::GeneratedProof};
 
 /// Core AMM trait for Darklake DEX operations
 pub(crate) trait Amm: Send + Sync {
@@ -90,14 +90,6 @@ pub(crate) trait Amm: Send + Sync {
         &self,
         remove_liquidity_params: &RemoveLiquidityParams,
     ) -> Result<RemoveLiquidityAndAccountMetas>;
-
-    // helper
-    fn get_finalize_and_account_metas(
-        &self,
-        finalize_params: &FinalizeParams,
-        settle_proof_params: &ProofParams,
-        cancel_proof_params: &ProofParams,
-    ) -> Result<FinalizeAndAccountMetas>;
 }
 
 /// Account map for storing account data
@@ -408,7 +400,8 @@ pub(crate) struct ProofCircuitPaths {
 
 #[derive(Debug, Clone)]
 pub struct ProofParams {
-    pub paths: ProofCircuitPaths,
+    pub generated_proof: GeneratedProof,
+    pub public_inputs: [[u8; 32]; 2],
 }
 /// Helper function to get account data from account map
 pub(crate) fn try_get_account_data<'a>(

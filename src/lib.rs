@@ -35,7 +35,7 @@
 //!
 //! // Initialize the SDK
 //! let mut sdk = DarklakeSDK::new(
-//!     "https://api.devnet.solana.com", 
+//!     "https://api.devnet.solana.com",
 //!     CommitmentLevel::Confirmed,
 //!     true, // is_devnet
 //!     None, // label (optional, up to 10 characters)

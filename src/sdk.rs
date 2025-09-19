@@ -3,9 +3,9 @@ use spl_token::native_mint;
 
 use crate::{
     amm::{
-        AccountData, AddLiquidityParams, Amm, FinalizeParams, InitializePoolParams, KeyedAccount,
-        ProofCircuitPaths, ProofParams, Quote, QuoteParams, RemoveLiquidityParams, SwapMode,
-        SwapParams,
+        AccountData, AddLiquidityParams, Amm, CancelParams, FinalizeParams, InitializePoolParams,
+        KeyedAccount, ProofCircuitPaths, ProofParams, Quote, QuoteParams, RemoveLiquidityParams,
+        SettleParams, SlashParams, SwapMode, SwapParams,
     },
     constants::{DARKLAKE_PROGRAM_ID, SOL_MINT},
     darklake_amm::{AmmConfig, DarklakeAmm, Order, Pool},
@@ -24,12 +24,18 @@ use solana_sdk::{
     commitment_config::{CommitmentConfig, CommitmentLevel},
     compute_budget::ComputeBudgetInstruction,
     instruction::Instruction,
-    message::{v0, VersionedMessage},
+    message::{VersionedMessage, v0},
     pubkey::Pubkey,
     transaction::VersionedTransaction,
 };
 use std::collections::HashMap;
-use tokio::time::{sleep, Duration};
+use tokio::time::{Duration, sleep};
+
+use crate::proof::proof_generator::{
+    PrivateProofInputs, PublicProofInputs, convert_proof_to_solana_proof, from_32_byte_buffer,
+    generate_proof,
+};
+
 pub struct DarklakeSDK {
     rpc_client: RpcClient,
     darklake_amm: DarklakeAmm,
@@ -230,7 +236,7 @@ impl DarklakeSDK {
             salt,
         };
 
-        let swap_instruction = self.swap_ix(&swap_params)?;
+        let swap_instruction = self.swap_ix(&swap_params).await?;
 
         let compute_budget_ix = ComputeBudgetInstruction::set_compute_unit_limit(300_000);
 
@@ -334,7 +340,7 @@ impl DarklakeSDK {
                 .await?,
         };
 
-        let finalize_instruction = self.finalize_ix(&finalize_params)?;
+        let finalize_instruction = self.finalize_ix(&finalize_params).await?;
 
         let compute_budget_ix = ComputeBudgetInstruction::set_compute_unit_limit(500_000);
 
@@ -404,7 +410,7 @@ impl DarklakeSDK {
             user: user.clone(),
         };
 
-        let add_liquidity_instruction = self.add_liquidity_ix(&add_liquidity_params)?;
+        let add_liquidity_instruction = self.add_liquidity_ix(&add_liquidity_params).await?;
 
         let mut instructions = vec![];
         if is_x_sol {
@@ -504,7 +510,8 @@ impl DarklakeSDK {
             user: user.clone(),
         };
 
-        let remove_liquidity_instruction = self.remove_liquidity_ix(&remove_liquidity_params)?;
+        let remove_liquidity_instruction =
+            self.remove_liquidity_ix(&remove_liquidity_params).await?;
 
         let mut instructions = vec![
             create_token_x_ata_ix,
@@ -586,7 +593,7 @@ impl DarklakeSDK {
         let compute_budget_ix: Instruction =
             ComputeBudgetInstruction::set_compute_unit_limit(500_000);
 
-        let initialize_pool_instruction = self.initialize_pool_ix(&initialize_pool_params)?;
+        let initialize_pool_instruction = self.initialize_pool_ix(&initialize_pool_params).await?;
 
         let mut instructions = vec![compute_budget_ix];
         if is_x_sol {
@@ -701,7 +708,7 @@ impl DarklakeSDK {
         Ok(order)
     }
 
-    pub fn swap_ix(&self, swap_params: &SwapParamsIx) -> Result<Instruction> {
+    pub async fn swap_ix(&self, swap_params: &SwapParamsIx) -> Result<Instruction> {
         let swap_params = SwapParams {
             source_mint: swap_params.source_mint,
             destination_mint: swap_params.destination_mint,
@@ -725,7 +732,7 @@ impl DarklakeSDK {
         })
     }
 
-    pub fn finalize_ix(&self, finalize_params: &FinalizeParamsIx) -> Result<Instruction> {
+    pub async fn finalize_ix(&self, finalize_params: &FinalizeParamsIx) -> Result<Instruction> {
         let finalize_params = FinalizeParams {
             settle_signer: finalize_params.settle_signer,
             order_owner: finalize_params.order_owner,
@@ -740,24 +747,108 @@ impl DarklakeSDK {
             ref_code: self.ref_code,
         };
 
-        let finalize_and_account_metas = self.darklake_amm.get_finalize_and_account_metas(
-            &finalize_params,
+        let is_settle = finalize_params.min_out <= finalize_params.output;
+        let is_slash = finalize_params.current_slot > finalize_params.deadline;
+
+        if is_slash {
+            self.darklake_amm
+                .get_slash_and_account_metas(&SlashParams {
+                    settle_signer: finalize_params.settle_signer,
+                    order_owner: finalize_params.order_owner,
+                    deadline: finalize_params.deadline,
+                    current_slot: finalize_params.current_slot,
+                    label: finalize_params.label,
+                })?;
+        }
+
+        let circuit_paths = if is_settle {
+            self.settle_paths.clone()
+        } else {
+            self.cancel_paths.clone()
+        };
+
+        let private_inputs = PrivateProofInputs {
+            min_out: finalize_params.min_out,
+            salt: u64::from_le_bytes(finalize_params.salt),
+        };
+
+        let public_inputs = PublicProofInputs {
+            real_out: finalize_params.output,
+            commitment: from_32_byte_buffer(&finalize_params.commitment),
+        };
+
+        let (proof, _) = generate_proof(
+            &private_inputs,
+            &public_inputs,
+            &circuit_paths.wasm_path,
+            &circuit_paths.zkey_path,
+            &circuit_paths.r1cs_path,
+        )
+        .await
+        .map_err(|e| anyhow::anyhow!("Failed to generate proof: {}", e))?;
+
+        let solana_proof = convert_proof_to_solana_proof(&proof, &public_inputs);
+        let public_inputs_vec = solana_proof.public_signals.clone();
+        let public_inputs_arr: [[u8; 32]; 2] = public_inputs_vec
+            .try_into()
+            .map_err(|_| anyhow::anyhow!("Invalid public signals length"))?;
+
+        if is_settle {
+            let settle_params = SettleParams {
+                settle_signer: finalize_params.settle_signer,
+                order_owner: finalize_params.order_owner,
+                unwrap_wsol: finalize_params.unwrap_wsol,
+                min_out: finalize_params.min_out,
+                salt: finalize_params.salt,
+                output: finalize_params.output,
+                commitment: finalize_params.commitment,
+                deadline: finalize_params.deadline,
+                current_slot: finalize_params.current_slot,
+                ref_code: finalize_params.ref_code,
+                label: finalize_params.label,
+            };
+            let settle_and_account_metas = self.darklake_amm.get_settle_and_account_metas(
+                &settle_params,
+                &ProofParams {
+                    generated_proof: solana_proof,
+                    public_inputs: public_inputs_arr,
+                },
+            )?;
+
+            return Ok(Instruction {
+                program_id: DARKLAKE_PROGRAM_ID,
+                accounts: settle_and_account_metas.account_metas,
+                data: settle_and_account_metas.data,
+            });
+        }
+
+        let cancel_params = CancelParams {
+            settle_signer: finalize_params.settle_signer,
+            order_owner: finalize_params.order_owner,
+            min_out: finalize_params.min_out,
+            salt: finalize_params.salt,
+            output: finalize_params.output,
+            commitment: finalize_params.commitment,
+            deadline: finalize_params.deadline,
+            current_slot: finalize_params.current_slot,
+            label: finalize_params.label,
+        };
+        let cancel_and_account_metas = self.darklake_amm.get_cancel_and_account_metas(
+            &cancel_params,
             &ProofParams {
-                paths: self.settle_paths.clone(),
-            },
-            &ProofParams {
-                paths: self.cancel_paths.clone(),
+                generated_proof: solana_proof,
+                public_inputs: public_inputs_arr,
             },
         )?;
 
-        Ok(Instruction {
+        return Ok(Instruction {
             program_id: DARKLAKE_PROGRAM_ID,
-            accounts: finalize_and_account_metas.account_metas(),
-            data: finalize_and_account_metas.data(),
-        })
+            accounts: cancel_and_account_metas.account_metas,
+            data: cancel_and_account_metas.data,
+        });
     }
 
-    pub fn add_liquidity_ix(
+    pub async fn add_liquidity_ix(
         &self,
         add_liquidity_params: &AddLiquidityParamsIx,
     ) -> Result<Instruction> {
@@ -781,7 +872,7 @@ impl DarklakeSDK {
         })
     }
 
-    pub fn remove_liquidity_ix(
+    pub async fn remove_liquidity_ix(
         &self,
         remove_liquidity_params: &RemoveLiquidityParamsIx,
     ) -> Result<Instruction> {
@@ -804,7 +895,7 @@ impl DarklakeSDK {
         })
     }
 
-    pub fn initialize_pool_ix(
+    pub async fn initialize_pool_ix(
         &self,
         initialize_pool_params: &InitializePoolParamsIx,
     ) -> Result<Instruction> {

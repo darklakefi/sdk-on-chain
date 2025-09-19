@@ -8,6 +8,10 @@ use crate::constants::{
     MAINNET_CREATE_POOL_FEE_VAULT, METADATA_PROGRAM_ID, METADATA_SEED, ORDER_SEED, ORDER_WSOL_SEED,
     POOL_RESERVE_SEED, POOL_SEED, POOL_WSOL_RESERVE_SEED,
 };
+use crate::proof::proof_generator::to_32_byte_buffer;
+use crate::proof::utils::{
+    bytes_to_bigint, compute_poseidon_hash_with_salt, u64_array_to_u8_array_le,
+};
 use crate::utils::get_transfer_fee;
 use crate::{
     account_metas::{
@@ -17,21 +21,13 @@ use crate::{
     amm::*,
 };
 
-use crate::proof::proof_generator::{
-    convert_proof_to_solana_proof, from_32_byte_buffer, generate_proof, to_32_byte_buffer,
-    PrivateProofInputs, PublicProofInputs,
-};
-use crate::proof::utils::{
-    bytes_to_bigint, compute_poseidon_hash_with_salt, u64_array_to_u8_array_le,
-};
-
-use anchor_lang::{system_program, AnchorDeserialize, AnchorSerialize};
-use anyhow::{bail, Context, Result};
+use anchor_lang::{AnchorDeserialize, AnchorSerialize, system_program};
+use anyhow::{Context, Result, bail};
 use rust_decimal::Decimal;
 use solana_sdk::{program_pack::Pack, pubkey::Pubkey};
 use spl_token::{native_mint, state::Account as SplTokenAccount};
 use spl_token_2022::extension::{
-    transfer_fee::TransferFeeConfig, BaseStateWithExtensions, StateWithExtensions,
+    BaseStateWithExtensions, StateWithExtensions, transfer_fee::TransferFeeConfig,
 };
 
 #[derive(Clone)]
@@ -415,31 +411,6 @@ impl Amm for DarklakeAmm {
         let order = self.get_order(order_owner);
         let order_token_account_wsol = self.get_order_token_account_wsol(*order_owner);
 
-        let private_inputs = PrivateProofInputs {
-            min_out: *min_out,
-            salt: u64::from_le_bytes(*salt),
-        };
-
-        let public_inputs = PublicProofInputs {
-            real_out: *output,
-            commitment: from_32_byte_buffer(&commitment),
-        };
-
-        let (proof, _) = generate_proof(
-            &private_inputs,
-            &public_inputs,
-            &proof_params.paths.wasm_path,
-            &proof_params.paths.zkey_path,
-            &proof_params.paths.r1cs_path,
-        )
-        .map_err(|e| anyhow::anyhow!("Failed to generate proof: {}", e))?;
-
-        let solana_proof = convert_proof_to_solana_proof(&proof, &public_inputs);
-        let public_inputs_vec = solana_proof.public_signals.clone();
-        let public_inputs_arr: [[u8; 32]; 2] = public_inputs_vec
-            .try_into()
-            .map_err(|_| anyhow::anyhow!("Invalid public signals length"))?;
-
         let is_settle = *min_out <= *output;
 
         if !is_settle {
@@ -448,11 +419,11 @@ impl Amm for DarklakeAmm {
         let discriminator = [175, 42, 185, 87, 144, 131, 102, 212];
 
         let mut data = discriminator.to_vec();
-        data.extend_from_slice(&solana_proof.proof_a);
-        data.extend_from_slice(&solana_proof.proof_b);
-        data.extend_from_slice(&solana_proof.proof_c);
-        data.extend_from_slice(&public_inputs_arr[0]);
-        data.extend_from_slice(&public_inputs_arr[1]);
+        data.extend_from_slice(&proof_params.generated_proof.proof_a);
+        data.extend_from_slice(&proof_params.generated_proof.proof_b);
+        data.extend_from_slice(&proof_params.generated_proof.proof_c);
+        data.extend_from_slice(&proof_params.public_inputs[0]);
+        data.extend_from_slice(&proof_params.public_inputs[1]);
         data.extend_from_slice(&[*unwrap_wsol as u8]);
         let serialized_ref_code = ref_code.try_to_vec()?;
         data.extend_from_slice(&serialized_ref_code);
@@ -462,10 +433,10 @@ impl Amm for DarklakeAmm {
         Ok(SettleAndAccountMetas {
             discriminator,
             settle: DarklakeAmmSettleParams {
-                proof_a: solana_proof.proof_a,
-                proof_b: solana_proof.proof_b,
-                proof_c: solana_proof.proof_c,
-                public_signals: public_inputs_arr,
+                proof_a: proof_params.generated_proof.proof_a,
+                proof_b: proof_params.generated_proof.proof_b,
+                proof_c: proof_params.generated_proof.proof_c,
+                public_signals: proof_params.public_inputs,
                 unwrap_wsol: *unwrap_wsol,
                 ref_code: *ref_code,
                 label: *label,
@@ -541,31 +512,6 @@ impl Amm for DarklakeAmm {
             DarklakeAmm::get_user_token_account(*settle_signer, native_mint::ID, spl_token::ID);
         let order = self.get_order(order_owner);
 
-        let private_inputs = PrivateProofInputs {
-            min_out: *min_out,
-            salt: u64::from_le_bytes(*salt),
-        };
-
-        let public_inputs = PublicProofInputs {
-            real_out: *output,
-            commitment: from_32_byte_buffer(&commitment),
-        };
-
-        let (proof, _) = generate_proof(
-            &private_inputs,
-            &public_inputs,
-            &proof_params.paths.wasm_path,
-            &proof_params.paths.zkey_path,
-            &proof_params.paths.r1cs_path,
-        )
-        .map_err(|e| anyhow::anyhow!("Failed to generate proof: {}", e))?;
-
-        let solana_proof = convert_proof_to_solana_proof(&proof, &public_inputs);
-        let public_inputs_vec = solana_proof.public_signals.clone();
-        let public_inputs_arr: [[u8; 32]; 2] = public_inputs_vec
-            .try_into()
-            .map_err(|_| anyhow::anyhow!("Invalid public signals length"))?;
-
         let is_cancel = *min_out > *output;
 
         if !is_cancel {
@@ -575,21 +521,21 @@ impl Amm for DarklakeAmm {
         let discriminator = [232, 219, 223, 41, 219, 236, 220, 190];
 
         let mut data = discriminator.to_vec();
-        data.extend_from_slice(&solana_proof.proof_a);
-        data.extend_from_slice(&solana_proof.proof_b);
-        data.extend_from_slice(&solana_proof.proof_c);
-        data.extend_from_slice(&public_inputs_arr[0]);
-        data.extend_from_slice(&public_inputs_arr[1]);
+        data.extend_from_slice(&proof_params.generated_proof.proof_a);
+        data.extend_from_slice(&proof_params.generated_proof.proof_b);
+        data.extend_from_slice(&proof_params.generated_proof.proof_c);
+        data.extend_from_slice(&proof_params.public_inputs[0]);
+        data.extend_from_slice(&proof_params.public_inputs[1]);
         let serialized_label = label.try_to_vec()?;
         data.extend_from_slice(&serialized_label);
 
         Ok(CancelAndAccountMetas {
             discriminator,
             cancel: DarklakeAmmCancelParams {
-                proof_a: solana_proof.proof_a,
-                proof_b: solana_proof.proof_b,
-                proof_c: solana_proof.proof_c,
-                public_signals: public_inputs_arr,
+                proof_a: proof_params.generated_proof.proof_a,
+                proof_b: proof_params.generated_proof.proof_b,
+                proof_c: proof_params.generated_proof.proof_c,
+                public_signals: proof_params.public_inputs,
                 label: *label,
             },
             data,
@@ -689,78 +635,6 @@ impl Amm for DarklakeAmm {
             }
             .into(),
         })
-    }
-
-    fn get_finalize_and_account_metas(
-        &self,
-        finalize_params: &FinalizeParams,
-        settle_proof_params: &ProofParams,
-        cancel_proof_params: &ProofParams,
-    ) -> Result<FinalizeAndAccountMetas> {
-        let FinalizeParams {
-            settle_signer,
-            order_owner,
-            unwrap_wsol,
-            min_out,
-            salt,
-            output,
-            commitment,
-            deadline,
-            current_slot,
-            ref_code,
-            label,
-        } = finalize_params;
-
-        let is_settle = *min_out <= *output;
-        let is_slash = *current_slot > *deadline;
-
-        if is_slash {
-            return Ok(FinalizeAndAccountMetas::Slash(
-                self.get_slash_and_account_metas(&SlashParams {
-                    settle_signer: *settle_signer,
-                    order_owner: *order_owner,
-                    deadline: *deadline,
-                    current_slot: *current_slot,
-                    label: *label,
-                })?,
-            ));
-        } else if is_settle {
-            return Ok(FinalizeAndAccountMetas::Settle(
-                self.get_settle_and_account_metas(
-                    &SettleParams {
-                        settle_signer: *settle_signer,
-                        order_owner: *order_owner,
-                        unwrap_wsol: *unwrap_wsol,
-                        min_out: *min_out,
-                        salt: *salt,
-                        output: *output,
-                        commitment: *commitment,
-                        deadline: *deadline,
-                        current_slot: *current_slot,
-                        ref_code: *ref_code,
-                        label: *label,
-                    },
-                    &settle_proof_params,
-                )?,
-            ));
-        } else {
-            return Ok(FinalizeAndAccountMetas::Cancel(
-                self.get_cancel_and_account_metas(
-                    &CancelParams {
-                        settle_signer: *settle_signer,
-                        order_owner: *order_owner,
-                        min_out: *min_out,
-                        salt: *salt,
-                        output: *output,
-                        commitment: *commitment,
-                        deadline: *deadline,
-                        current_slot: *current_slot,
-                        label: *label,
-                    },
-                    &cancel_proof_params,
-                )?,
-            ));
-        }
     }
 
     fn get_add_liquidity_and_account_metas(
