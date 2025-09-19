@@ -7,6 +7,8 @@ A standalone SDK for interacting with Darklake AMM pools on Solana. This SDK pro
 1. **Transaction Functions (`_tx`)**: Return fully formatted transaction that can be signed and sent
 2. **Instruction Functions (`_ix`)**: Return core instruction, allowing users to manage additional calls as needed
 
+> **⚠️ All public SDK methods are async** - require `.await` when called.
+
 > **📚 Detailed Examples**: For comprehensive examples and advanced usage patterns, see the [SDK Examples Repository](https://github.com/darklakefi/sdk-on-chain-examples).
 
 ## Internal State Management
@@ -37,7 +39,7 @@ use solana_sdk::commitment_config::CommitmentLevel;
 
 // Initialize the SDK
 let mut sdk = DarklakeSDK::new(
-    "https://api.devnet.solana.com", 
+    "https://api.devnet.solana.com",
     CommitmentLevel::Confirmed,
     true, // is_devnet
     None, // label (optional, up to 10 characters)
@@ -127,7 +129,7 @@ let swap_params = SwapParamsIx {
     salt,
 };
 
-let swap_ix = sdk.swap_ix(&swap_params)?;
+let swap_ix = sdk.swap_ix(&swap_params).await?;
 
 let recent_blockhash = rpc_client
     .get_latest_blockhash()
@@ -167,7 +169,7 @@ let finalize_params = FinalizeParamsIx {
 
 let compute_budget_ix: Instruction = ComputeBudgetInstruction::set_compute_unit_limit(500_000);
 
-let finalize_ix = sdk.finalize_ix(&finalize_params)?;
+let finalize_ix = sdk.finalize_ix(&finalize_params).await?;
 
 let recent_blockhash = rpc_client
     .get_latest_blockhash()
