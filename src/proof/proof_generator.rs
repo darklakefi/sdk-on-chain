@@ -7,6 +7,8 @@ use ark_groth16::{Groth16, Proof};
 use ark_std::rand::thread_rng;
 use num_bigint::BigUint;
 use num_traits::Num;
+use std::io::{self};
+use tokio::task;
 
 use std::ops::Neg;
 type GrothBn = Groth16<Bn254, CircomReduction>;
@@ -66,15 +68,19 @@ pub fn find_circuit_path(filename: &str) -> String {
 ///
 /// # Returns
 /// * `Result<GeneratedProof>` - The generated proof components
-pub fn generate_proof(
+pub async fn generate_proof(
     private_inputs: &PrivateProofInputs,
     public_inputs: &PublicProofInputs,
     wasm_path: &str,
     zkey_path: &str,
     r1cs_path: &str,
 ) -> Result<(Proof<Bn254>, Vec<Fr>)> {
+    let wasm_path = wasm_path.to_string();
+    let r1cs_path = r1cs_path.to_string();
     // // Create Circom configuration
-    let cfg = CircomConfig::<Fr>::new(&wasm_path, &r1cs_path).unwrap();
+    let result_handle =
+        task::spawn_blocking(move || CircomConfig::<Fr>::new(&wasm_path, &r1cs_path).unwrap());
+    let cfg = result_handle.await.unwrap();
 
     // // Build the circuit
     let mut builder = CircomBuilder::new(cfg);
@@ -90,8 +96,27 @@ pub fn generate_proof(
     builder.push_input("commitment", public_inputs.commitment.clone());
     let mut rng = thread_rng();
 
-    let mut key_file = std::fs::File::open(zkey_path).unwrap();
-    let (params, _) = ark_circom::read_zkey(&mut key_file).unwrap();
+    let key_file = tokio::fs::File::open(zkey_path).await?;
+    let (params, _) = task::spawn_blocking(move || {
+        let mut key_file_std: std::fs::File = key_file.try_into_std().map_err(|e| {
+            io::Error::new(
+                io::ErrorKind::Other,
+                format!(
+                    "Failed to convert tokio::fs::File to std::fs::File: {:?}",
+                    e
+                ),
+            )
+        })?;
+
+        ark_circom::read_zkey(&mut key_file_std)
+    })
+    .await
+    .map_err(|e| {
+        io::Error::new(
+            io::ErrorKind::Other,
+            format!("Blocking task failed: {:?}", e),
+        )
+    })??;
 
     // // Generate the proof
     let circom = builder.build().unwrap();
@@ -291,7 +316,8 @@ mod tests {
             &wasm_path,
             &zkey_path,
             &r1cs_path,
-        );
+        )
+        .await;
 
         let zkey_path = find_circuit_path("settle_final.zkey");
 
@@ -336,7 +362,8 @@ mod tests {
             &wasm_path,
             &zkey_path,
             &r1cs_path,
-        );
+        )
+        .await;
 
         let zkey_path = find_circuit_path("cancel_final.zkey");
 
