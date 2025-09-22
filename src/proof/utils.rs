@@ -1,7 +1,7 @@
 use ark_bn254_4::Fr;
+use darklake_poseidon_ark as poseidon;
 use num_bigint::BigUint;
 use password_hash::rand_core::{OsRng, RngCore};
-use poseidon_ark as poseidon;
 use std::str::FromStr;
 
 pub fn u64_array_to_u8_array_le(input: &[u64; 4]) -> [u8; 32] {
