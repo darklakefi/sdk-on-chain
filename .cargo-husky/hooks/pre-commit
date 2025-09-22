@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+echo "Running pre-commit hooks..."
+
+# Collect staged Rust files
+files=$(git diff --cached --name-only --diff-filter=ACMR | grep -E '\.rs$' || true)
+[ -z "$files" ] && exit 0
+
+# Check formatting using rustfmt on staged files only with root rustfmt.toml
+echo "$files" | xargs -r rustfmt --config-path rustfmt.toml --check
