@@ -1,6 +1,11 @@
 # Darklake DEX on-chain SDK
 ****
-[![Darklake-SDK](https://img.shields.io/badge/Darklake-SDK-010f06?labelColor=35d688)](https://darklake.fi/) [![SDK Version](https://img.shields.io/badge/dynamic/toml?url=https%3A%2F%2Fraw.githubusercontent.com%2Fdarklakefi%2Fsdk-on-chain%2Fdevelop%2FCargo.toml&query=%24.package.version&label=SDK%20Version)](Cargo.toml)
+[![Darklake-SDK](https://img.shields.io/badge/Darklake-SDK-010f06?labelColor=35d688)](https://darklake.fi/) [![SDK Version](https://img.shields.io/badge/dynamic/toml?url=https%3A%2F%2Fraw.githubusercontent.com%2Fdarklakefi%2Fsdk-on-chain%2Fdevelop%2FCargo.toml&query=%24.package.version&label=SDK%20Version)](Cargo.toml) [![Rust msrv](https://img.shields.io/crates/msrv/darklake-sdk-on-chain?logo=rust)]() [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE) [![Conventional Commits](https://img.shields.io/badge/Conventional%20Commits-1.0.0-yellow.svg)](https://conventionalcommits.org) [![Cargo](https://img.shields.io/crates/v/darklake-sdk-on-chain.svg)](https://crates.io/crates/darklake-sdk-on-chain) [![Documentation](https://img.shields.io/docsrs/darklake-sdk-on-chain)](https://docs.rs/darklake-sdk-on-chain) [![Built for Solana](https://img.shields.io/badge/Solana-000?logo=Solana&logoColor=9945FF)](https://solana.com/)
+
+This project is part of a wider integration project composed by:
+
+- [sdk-off-chain](https://github.com/darklakefi/sdk-off-chain)
+- [sdk-on-chain](https://github.com/darklakefi/sdk-on-chain)
 
 A standalone SDK for interacting with Darklake AMM pools on Solana. This SDK provides two main usage flows:
 
@@ -222,7 +227,7 @@ let sdk = DarklakeSDK::new(
 
 #### Transaction Functions (`_tx`) - Fully Formatted Transactions
 
-- **`quote(&token_in, &token_out, amount_in)`** - Get a quote for a swap
+- **`quote(&token_in, &token_out, amount_in)`** - Get a quote for a swap. The quote returns Darklake controlled fees in the `fee_amount` field and the `fee_pct` field (which do not include fees imposed by tokens themselves), but it does take them into account when calculating the output.
 - **`swap_tx(&token_in, &token_out, amount_in, min_amount_out, &token_owner)`** - Generate swap transaction, returns `(VersionedTransaction, order_key, min_amount_out, salt)`
 - **`finalize_tx(&order_key, unwrap_wsol, min_out, salt, settle_signer)`** - Generate finalize transaction using parameters from swap_tx
 

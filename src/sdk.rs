@@ -183,7 +183,7 @@ impl DarklakeSDK {
         })
     }
 
-    /// Execute a swap
+    /// Start a swap
     ///
     /// # Arguments
     /// * `token_in` - The input token mint
@@ -193,7 +193,7 @@ impl DarklakeSDK {
     /// * `token_owner` - The token owner public key
     ///
     /// # Returns
-    /// Returns the tx signature of the executed swap
+    /// Returns a `VersionedTransaction`, the order key, the minimum amount of output tokens expected (min_out), and the salt used
     pub async fn swap_tx(
         &mut self,
         token_in: &Pubkey,
@@ -273,6 +273,17 @@ impl DarklakeSDK {
         Ok((swap_transaction, order_key, min_amount_out, salt))
     }
 
+    /// Finalize a swap order by settling, canceling, or slashing it
+    ///
+    /// # Arguments
+    /// * `order_key` - The public key of the order to finalize
+    /// * `unwrap_wsol` - Whether to unwrap WSOL to SOL after settlement
+    /// * `min_out` - The minimum output amount expected (same as swap)
+    /// * `salt` - The salt used in the original swap (same as swap)
+    /// * `settle_signer` - Optional signer for settlement (defaults to order owner)
+    ///
+    /// # Returns
+    /// Returns a `VersionedTransaction` ready to be signed and sent
     pub async fn finalize_tx(
         &mut self,
         order_key: &Pubkey,
@@ -365,6 +376,18 @@ impl DarklakeSDK {
         Ok(finalize_transaction)
     }
 
+    /// Add liquidity to a pool
+    ///
+    /// # Arguments
+    /// * `token_x` - The first token mint address
+    /// * `token_y` - The second token mint address
+    /// * `max_amount_x` - Maximum amount of token_x to add
+    /// * `max_amount_y` - Maximum amount of token_y to add
+    /// * `amount_lp` - Amount of LP tokens to mint
+    /// * `user` - The user's public key
+    ///
+    /// # Returns
+    /// Returns a `VersionedTransaction` ready to be signed and sent
     pub async fn add_liquidity_tx(
         &mut self,
         token_x: &Pubkey,
@@ -446,6 +469,18 @@ impl DarklakeSDK {
         Ok(add_liquidity_transaction)
     }
 
+    /// Remove liquidity from a pool
+    ///
+    /// # Arguments
+    /// * `token_x` - The first token mint address
+    /// * `token_y` - The second token mint address
+    /// * `min_amount_x` - Minimum amount of token_x to receive
+    /// * `min_amount_y` - Minimum amount of token_y to receive
+    /// * `amount_lp` - Amount of LP tokens to burn
+    /// * `user` - The user's public key
+    ///
+    /// # Returns
+    /// Returns a `VersionedTransaction` ready to be signed and sent
     pub async fn remove_liquidity_tx(
         &mut self,
         token_x: &Pubkey,
@@ -545,6 +580,17 @@ impl DarklakeSDK {
         Ok(remove_liquidity_transaction)
     }
 
+    /// Initialize a new liquidity pool
+    ///
+    /// # Arguments
+    /// * `token_x` - The first token mint address
+    /// * `token_y` - The second token mint address
+    /// * `amount_x` - Initial amount of token_x to add
+    /// * `amount_y` - Initial amount of token_y to add
+    /// * `user` - The user's public key
+    ///
+    /// # Returns
+    /// Returns a `VersionedTransaction` ready to be signed and sent
     pub async fn initialize_pool_tx(
         &mut self,
         token_x: &Pubkey,
@@ -634,6 +680,14 @@ impl DarklakeSDK {
     // before calling swap_ix/finalize_ix/add_liquidity_ix/remove_liquidity_ix -
     // load_pool has to be called at least once before usage and update_accounts before each function call
 
+    /// Load pool data from the blockchain
+    ///
+    /// # Arguments
+    /// * `token_x` - The first token mint address
+    /// * `token_y` - The second token mint address
+    ///
+    /// # Returns
+    /// Returns a tuple of (pool_key, sorted_token_x, sorted_token_y)
     pub async fn load_pool(
         &mut self,
         token_x: &Pubkey,
@@ -661,6 +715,13 @@ impl DarklakeSDK {
         Ok((pool_key, token_x.clone(), token_y.clone()))
     }
 
+    /// Update account data from the blockchain
+    ///
+    /// This function fetches the latest account data for all accounts that need to be updated
+    /// and updates the internal AMM state accordingly.
+    ///
+    /// # Returns
+    /// Returns `Ok(())` on success
     pub async fn update_accounts(&mut self) -> Result<()> {
         let accounts_to_update = self.darklake_amm.get_accounts_to_update();
         let mut account_map = HashMap::new();
@@ -679,7 +740,17 @@ impl DarklakeSDK {
         Ok(())
     }
 
-    // does not require load_pool or update_accounts is a standalone function after new() is called
+    /// Get order data for a user
+    ///
+    /// This function does not require load_pool or update_accounts and is a standalone function
+    /// that can be called after new() is called.
+    ///
+    /// # Arguments
+    /// * `user` - The user's public key
+    /// * `commitment_level` - The commitment level for the RPC call
+    ///
+    /// # Returns
+    /// Returns the `Order` data for the user
     pub async fn get_order(
         &self,
         user: &Pubkey,
@@ -708,6 +779,13 @@ impl DarklakeSDK {
         Ok(order)
     }
 
+    /// Create a swap instruction
+    ///
+    /// # Arguments
+    /// * `swap_params` - The swap parameters
+    ///
+    /// # Returns
+    /// Returns a `Instruction` ready to be added to a transaction
     pub async fn swap_ix(&self, swap_params: &SwapParamsIx) -> Result<Instruction> {
         let swap_params = SwapParams {
             source_mint: swap_params.source_mint,
@@ -732,6 +810,13 @@ impl DarklakeSDK {
         })
     }
 
+    /// Create a finalize instruction (settle or cancel)
+    ///
+    /// # Arguments
+    /// * `finalize_params` - The finalize parameters
+    ///
+    /// # Returns
+    /// Returns a `Instruction` ready to be added to a transaction
     pub async fn finalize_ix(&self, finalize_params: &FinalizeParamsIx) -> Result<Instruction> {
         let finalize_params = FinalizeParams {
             settle_signer: finalize_params.settle_signer,
@@ -848,6 +933,13 @@ impl DarklakeSDK {
         });
     }
 
+    /// Create an add liquidity instruction
+    ///
+    /// # Arguments
+    /// * `add_liquidity_params` - The add liquidity parameters
+    ///
+    /// # Returns
+    /// Returns a `Instruction` ready to be added to a transaction
     pub async fn add_liquidity_ix(
         &self,
         add_liquidity_params: &AddLiquidityParamsIx,
@@ -872,6 +964,13 @@ impl DarklakeSDK {
         })
     }
 
+    /// Create a remove liquidity instruction
+    ///
+    /// # Arguments
+    /// * `remove_liquidity_params` - The remove liquidity parameters
+    ///
+    /// # Returns
+    /// Returns a `Instruction` ready to be added to a transaction
     pub async fn remove_liquidity_ix(
         &self,
         remove_liquidity_params: &RemoveLiquidityParamsIx,
@@ -895,6 +994,13 @@ impl DarklakeSDK {
         })
     }
 
+    /// Create an initialize pool instruction
+    ///
+    /// # Arguments
+    /// * `initialize_pool_params` - The initialize pool parameters
+    ///
+    /// # Returns
+    /// Returns a `Instruction` ready to be added to a transaction
     pub async fn initialize_pool_ix(
         &self,
         initialize_pool_params: &InitializePoolParamsIx,
