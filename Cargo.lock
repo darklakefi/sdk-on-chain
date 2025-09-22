@@ -4318,7 +4318,7 @@ checksum = "f84267b20a16ea918e43c6a88433c2d54fa145c92a811b5b047ccbe153674483"
 [[package]]
 name = "poseidon-ark"
 version = "0.0.1"
-source = "git+https://github.com/darklakefi/poseidon-ark.git?branch=gateway#c80663281ef67a814738d2a2adf2bef365d5980d"
+source = "git+https://github.com/darklakefi/poseidon-ark-gateway#c80663281ef67a814738d2a2adf2bef365d5980d"
 dependencies = [
  "ark-bn254 0.4.0",
  "ark-ff 0.4.2",
