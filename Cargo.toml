@@ -6,8 +6,8 @@ edition = "2024"
 authors = ["Darklake Team"]
 license = "MIT"
 documentation = "https://docs.rs/darklake-sdk-on-chain"
-homepage = "https://github.com/darklakefi/darklake-sdk-on-chain"
-repository = "https://github.com/darklakefi/darklake-sdk-on-chain.git"
+homepage = "https://github.com/darklakefi/sdk-on-chain"
+repository = "https://github.com/darklakefi/sdk-on-chain.git"
 
 [dependencies]
 anchor-client = { version = "0.31.1", features = ["async"] }
