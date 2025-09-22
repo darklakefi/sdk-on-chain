@@ -18,8 +18,6 @@ jobs:
 
   publish:
     name: publish to crates.io
-    needs:
-      - publish_audit
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
