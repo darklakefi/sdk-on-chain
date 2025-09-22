@@ -33,7 +33,7 @@ spl-associated-token-account = { version = "6.0.0", features = ["no-entrypoint"]
 spl-token-2022 = { version = "7.0.0", features = ["no-entrypoint"] }
 
 # Proof
-poseidon-ark = { git = "https://github.com/darklakefi/poseidon-ark.git", branch = "gateway" }
+poseidon-ark = { git = "https://github.com/darklakefi/poseidon-ark-gateway" }
 password-hash = "0.5.0"
 
 ark-groth16 = { version = "0.5.0" }
