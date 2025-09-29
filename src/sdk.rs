@@ -60,7 +60,7 @@ impl DarklakeSDK {
         };
 
         // label
-        let sdk_label_prefix = "cv0.2.0";
+        let sdk_label_prefix = "cv0.3.2";
 
         // sanity check for in-case we exceed prefix length
         if sdk_label_prefix.len() > 10 {
@@ -176,10 +176,13 @@ impl DarklakeSDK {
 
         self.update_accounts().await?;
 
+        let epoch = self.rpc_client.get_epoch_info().await?.epoch;
+
         self.darklake_amm.quote(&QuoteParams {
             input_mint: _token_in,
             amount: amount_in,
             swap_mode: SwapMode::ExactIn,
+            epoch,
         })
     }
 
@@ -414,6 +417,7 @@ impl DarklakeSDK {
         let (pool_key, _token_x, _token_y) =
             Self::get_pool_address(&token_x_post_sol, &token_y_post_sol);
 
+        // swaps ammount of token_x and token_y if tokens are not sorted
         let (max_amount_x, max_amount_y) = if _token_x != token_x_post_sol {
             (max_amount_y, max_amount_x)
         } else {

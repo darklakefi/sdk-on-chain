@@ -108,6 +108,7 @@ pub struct QuoteParams {
     pub input_mint: Pubkey,
     pub amount: u64,
     pub swap_mode: SwapMode,
+    pub epoch: u64,
 }
 
 /// Swap mode (exact in/out)
