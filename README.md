@@ -272,6 +272,20 @@ pub struct FinalizeParamsIx {
 }
 ```
 
+## Quote Return Structure
+
+The `quote()` function returns a `Quote` object with the following structure:
+
+```typescript
+interface Quote {
+  inAmount: BN;      // Amount that the exchange will use to trade, calculated by subtracting ALL fees from the user input. So it's NOT the user input value.
+  outAmount: BN;     // The output amount from the exchange EXCLUDING any transfer fees imposed by the token itself (if it does so)
+  feeAmount: BN;     // The total amount of fees deducted by the exchange NOT including any fees imposed by tokens
+  feeMint: PublicKey; // Pubkey address of a token in which the fees are charged
+  feePct: BN;        // The current total fee rate of the trade in percentage. Max value 1000000 = 100%
+}
+```
+
 ## 🌐 Network Configuration
 
 SDK needs an rpc url which is used for on chain data fetching.
