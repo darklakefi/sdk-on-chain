@@ -840,14 +840,15 @@ impl DarklakeSDK {
         let is_slash = finalize_params.current_slot > finalize_params.deadline;
 
         if is_slash {
-            let slash_and_account_metas = self.darklake_amm
-                .get_slash_and_account_metas(&SlashParams {
-                    settle_signer: finalize_params.settle_signer,
-                    order_owner: finalize_params.order_owner,
-                    deadline: finalize_params.deadline,
-                    current_slot: finalize_params.current_slot,
-                    label: finalize_params.label,
-                })?;
+            let slash_and_account_metas =
+                self.darklake_amm
+                    .get_slash_and_account_metas(&SlashParams {
+                        settle_signer: finalize_params.settle_signer,
+                        order_owner: finalize_params.order_owner,
+                        deadline: finalize_params.deadline,
+                        current_slot: finalize_params.current_slot,
+                        label: finalize_params.label,
+                    })?;
             return Ok(Instruction {
                 program_id: DARKLAKE_PROGRAM_ID,
                 accounts: slash_and_account_metas.account_metas,
