@@ -317,7 +317,7 @@ impl Amm for DarklakeAmm {
 
         let mut data = discriminator.to_vec();
 
-        data.extend_from_slice(&swap_params.in_amount.to_le_bytes());
+        data.extend_from_slice(&swap_params.amount_in.to_le_bytes());
         data.extend_from_slice(&[is_swap_x_to_y as u8]);
         data.extend_from_slice(&commitment);
         let serialized_label = label.try_to_vec()?;
@@ -326,7 +326,7 @@ impl Amm for DarklakeAmm {
         Ok(SwapAndAccountMetas {
             discriminator,
             swap: DarklakeAmmSwapParams {
-                amount_in: swap_params.in_amount,
+                amount_in: swap_params.amount_in,
                 is_swap_x_to_y,
                 c_min: commitment,
                 label: *label,

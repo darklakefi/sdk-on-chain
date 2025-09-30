@@ -128,7 +128,7 @@ let swap_params = SwapParamsIx {
     source_mint: token_mint_x,
     destination_mint: token_mint_y,
     token_transfer_authority: user_keypair.pubkey(),
-    in_amount: 1_000,
+    amount_in: 1_000,
     swap_mode: SwapMode::ExactIn,
     min_out,
     salt,
@@ -228,7 +228,7 @@ let sdk = DarklakeSDK::new(
 #### Transaction Functions (`_tx`) - Fully Formatted Transactions
 
 - **`quote(&token_in, &token_out, amount_in)`** - Get a quote for a swap. The quote returns Darklake controlled fees in the `fee_amount` field and the `fee_pct` field (which do not include fees imposed by tokens themselves), but it does take them into account when calculating the output.
-- **`swap_tx(&token_in, &token_out, amount_in, min_amount_out, &token_owner)`** - Generate swap transaction, returns `(VersionedTransaction, order_key, min_amount_out, salt)`
+- **`swap_tx(&token_in, &token_out, amount_in, min_out, &token_owner)`** - Generate swap transaction, returns `(VersionedTransaction, order_key, min_out, salt)`
 - **`finalize_tx(&order_key, unwrap_wsol, min_out, salt, settle_signer)`** - Generate finalize transaction using parameters from swap_tx
 
 #### Instruction Functions (`_ix`) - Core Instructions
@@ -250,7 +250,7 @@ pub struct SwapParamsIx {
     pub source_mint: Pubkey,
     pub destination_mint: Pubkey,
     pub token_transfer_authority: Pubkey,
-    pub in_amount: u64,
+    pub amount_in: u64,
     pub swap_mode: SwapMode,
     pub min_out: u64,
     pub salt: [u8; 8],

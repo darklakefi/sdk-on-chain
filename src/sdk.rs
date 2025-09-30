@@ -192,7 +192,7 @@ impl DarklakeSDK {
     /// * `token_in` - The input token mint
     /// * `token_out` - The output token mint
     /// * `amount_in` - The amount of input tokens
-    /// * `min_amount_out` - The minimum amount of output tokens expected
+    /// * `min_out` - The minimum amount of output tokens expected
     /// * `token_owner` - The token owner public key
     ///
     /// # Returns
@@ -202,7 +202,7 @@ impl DarklakeSDK {
         token_in: &Pubkey,
         token_out: &Pubkey,
         amount_in: u64,
-        min_amount_out: u64,
+        min_out: u64,
         token_owner: &Pubkey,
     ) -> Result<(VersionedTransaction, Pubkey, u64, [u8; 8])> {
         let is_from_sol = *token_in == SOL_MINT;
@@ -233,9 +233,9 @@ impl DarklakeSDK {
             source_mint: _token_in,
             destination_mint: _token_out,
             token_transfer_authority: token_owner.clone(),
-            in_amount: amount_in,
+            amount_in,
             swap_mode: SwapMode::ExactIn,
-            min_out: min_amount_out,
+            min_out,
             salt,
         };
 
@@ -273,7 +273,7 @@ impl DarklakeSDK {
 
         let order_key = self.darklake_amm.get_order_pubkey(&token_owner)?;
 
-        Ok((swap_transaction, order_key, min_amount_out, salt))
+        Ok((swap_transaction, order_key, min_out, salt))
     }
 
     /// Finalize a swap order by settling, canceling, or slashing it
@@ -795,7 +795,7 @@ impl DarklakeSDK {
             source_mint: swap_params.source_mint,
             destination_mint: swap_params.destination_mint,
             token_transfer_authority: swap_params.token_transfer_authority,
-            in_amount: swap_params.in_amount,
+            amount_in: swap_params.amount_in,
             swap_mode: swap_params.swap_mode,
             min_out: swap_params.min_out,
             salt: swap_params.salt,
