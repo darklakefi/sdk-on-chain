@@ -10,7 +10,7 @@ pub struct SwapParamsIx {
     pub source_mint: Pubkey,
     pub destination_mint: Pubkey,
     pub token_transfer_authority: Pubkey,
-    pub in_amount: u64,
+    pub amount_in: u64,
     pub swap_mode: SwapMode,
     pub min_out: u64,
     pub salt: [u8; 8],

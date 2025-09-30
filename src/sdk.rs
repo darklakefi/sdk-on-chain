@@ -60,7 +60,7 @@ impl DarklakeSDK {
         };
 
         // label
-        let sdk_label_prefix = "cv0.2.0";
+        let sdk_label_prefix = "cv0.4.0";
 
         // sanity check for in-case we exceed prefix length
         if sdk_label_prefix.len() > 10 {
@@ -176,10 +176,13 @@ impl DarklakeSDK {
 
         self.update_accounts().await?;
 
+        let epoch = self.rpc_client.get_epoch_info().await?.epoch;
+
         self.darklake_amm.quote(&QuoteParams {
             input_mint: _token_in,
             amount: amount_in,
             swap_mode: SwapMode::ExactIn,
+            epoch,
         })
     }
 
@@ -189,7 +192,7 @@ impl DarklakeSDK {
     /// * `token_in` - The input token mint
     /// * `token_out` - The output token mint
     /// * `amount_in` - The amount of input tokens
-    /// * `min_amount_out` - The minimum amount of output tokens expected
+    /// * `min_out` - The minimum amount of output tokens expected
     /// * `token_owner` - The token owner public key
     ///
     /// # Returns
@@ -199,7 +202,7 @@ impl DarklakeSDK {
         token_in: &Pubkey,
         token_out: &Pubkey,
         amount_in: u64,
-        min_amount_out: u64,
+        min_out: u64,
         token_owner: &Pubkey,
     ) -> Result<(VersionedTransaction, Pubkey, u64, [u8; 8])> {
         let is_from_sol = *token_in == SOL_MINT;
@@ -230,9 +233,9 @@ impl DarklakeSDK {
             source_mint: _token_in,
             destination_mint: _token_out,
             token_transfer_authority: token_owner.clone(),
-            in_amount: amount_in,
+            amount_in,
             swap_mode: SwapMode::ExactIn,
-            min_out: min_amount_out,
+            min_out,
             salt,
         };
 
@@ -270,7 +273,7 @@ impl DarklakeSDK {
 
         let order_key = self.darklake_amm.get_order_pubkey(&token_owner)?;
 
-        Ok((swap_transaction, order_key, min_amount_out, salt))
+        Ok((swap_transaction, order_key, min_out, salt))
     }
 
     /// Finalize a swap order by settling, canceling, or slashing it
@@ -414,6 +417,7 @@ impl DarklakeSDK {
         let (pool_key, _token_x, _token_y) =
             Self::get_pool_address(&token_x_post_sol, &token_y_post_sol);
 
+        // swaps ammount of token_x and token_y if tokens are not sorted
         let (max_amount_x, max_amount_y) = if _token_x != token_x_post_sol {
             (max_amount_y, max_amount_x)
         } else {
@@ -791,7 +795,7 @@ impl DarklakeSDK {
             source_mint: swap_params.source_mint,
             destination_mint: swap_params.destination_mint,
             token_transfer_authority: swap_params.token_transfer_authority,
-            in_amount: swap_params.in_amount,
+            amount_in: swap_params.amount_in,
             swap_mode: swap_params.swap_mode,
             min_out: swap_params.min_out,
             salt: swap_params.salt,
@@ -836,14 +840,20 @@ impl DarklakeSDK {
         let is_slash = finalize_params.current_slot > finalize_params.deadline;
 
         if is_slash {
-            self.darklake_amm
-                .get_slash_and_account_metas(&SlashParams {
-                    settle_signer: finalize_params.settle_signer,
-                    order_owner: finalize_params.order_owner,
-                    deadline: finalize_params.deadline,
-                    current_slot: finalize_params.current_slot,
-                    label: finalize_params.label,
-                })?;
+            let slash_and_account_metas =
+                self.darklake_amm
+                    .get_slash_and_account_metas(&SlashParams {
+                        settle_signer: finalize_params.settle_signer,
+                        order_owner: finalize_params.order_owner,
+                        deadline: finalize_params.deadline,
+                        current_slot: finalize_params.current_slot,
+                        label: finalize_params.label,
+                    })?;
+            return Ok(Instruction {
+                program_id: DARKLAKE_PROGRAM_ID,
+                accounts: slash_and_account_metas.account_metas,
+                data: slash_and_account_metas.data,
+            });
         }
 
         let circuit_paths = if is_settle {

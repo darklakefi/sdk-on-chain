@@ -5,8 +5,7 @@ use password_hash::rand_core::{OsRng, RngCore};
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::{
     address_lookup_table::AddressLookupTableAccount,
-    address_lookup_table::state::AddressLookupTable, clock::Clock, instruction::Instruction,
-    pubkey::Pubkey, sysvar::Sysvar,
+    address_lookup_table::state::AddressLookupTable, instruction::Instruction, pubkey::Pubkey,
 };
 use spl_associated_token_account::get_associated_token_address;
 use spl_token::native_mint;
@@ -17,6 +16,7 @@ use crate::constants::{DEVNET_LOOKUP, MAINNET_LOOKUP};
 pub(crate) fn get_transfer_fee(
     transfer_fee_config: Option<TransferFeeConfig>,
     pre_fee_amount: u64,
+    epoch: u64,
 ) -> Result<u64> {
     if transfer_fee_config.is_none() {
         return Ok(0);
@@ -24,7 +24,7 @@ pub(crate) fn get_transfer_fee(
 
     let fee = transfer_fee_config
         .unwrap()
-        .calculate_epoch_fee(Clock::get()?.epoch, pre_fee_amount)
+        .calculate_epoch_fee(epoch, pre_fee_amount)
         .unwrap();
 
     Ok(fee)

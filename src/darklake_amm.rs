@@ -217,9 +217,17 @@ impl Amm for DarklakeAmm {
         };
 
         let input_transfer_fee = if is_swap_x_to_y {
-            get_transfer_fee(self.token_x_transfer_fee_config, quote_params.amount)?
+            get_transfer_fee(
+                self.token_x_transfer_fee_config,
+                quote_params.amount,
+                quote_params.epoch,
+            )?
         } else {
-            get_transfer_fee(self.token_y_transfer_fee_config, quote_params.amount)?
+            get_transfer_fee(
+                self.token_y_transfer_fee_config,
+                quote_params.amount,
+                quote_params.epoch,
+            )?
         };
 
         let exchange_in = quote_params.amount.checked_sub(input_transfer_fee).unwrap();
@@ -239,9 +247,17 @@ impl Amm for DarklakeAmm {
         )?;
 
         let output_transfer_fee = if is_swap_x_to_y {
-            get_transfer_fee(self.token_y_transfer_fee_config, result.to_amount)?
+            get_transfer_fee(
+                self.token_y_transfer_fee_config,
+                result.to_amount,
+                quote_params.epoch,
+            )?
         } else {
-            get_transfer_fee(self.token_x_transfer_fee_config, result.to_amount)?
+            get_transfer_fee(
+                self.token_x_transfer_fee_config,
+                result.to_amount,
+                quote_params.epoch,
+            )?
         };
 
         let actual_output_amount = result.to_amount.checked_sub(output_transfer_fee).unwrap();
@@ -301,7 +317,7 @@ impl Amm for DarklakeAmm {
 
         let mut data = discriminator.to_vec();
 
-        data.extend_from_slice(&swap_params.in_amount.to_le_bytes());
+        data.extend_from_slice(&swap_params.amount_in.to_le_bytes());
         data.extend_from_slice(&[is_swap_x_to_y as u8]);
         data.extend_from_slice(&commitment);
         let serialized_label = label.try_to_vec()?;
@@ -310,7 +326,7 @@ impl Amm for DarklakeAmm {
         Ok(SwapAndAccountMetas {
             discriminator,
             swap: DarklakeAmmSwapParams {
-                amount_in: swap_params.in_amount,
+                amount_in: swap_params.amount_in,
                 is_swap_x_to_y,
                 c_min: commitment,
                 label: *label,
