@@ -388,6 +388,7 @@ impl DarklakeSDK {
     /// * `max_amount_y` - Maximum amount of token_y to add
     /// * `amount_lp` - Amount of LP tokens to mint
     /// * `user` - The user's public key
+    /// * `wrap_sol` - Whether to automatically wrap SOL to WSOL (default: true for backwards compatibility)
     ///
     /// # Returns
     /// Returns a `VersionedTransaction` ready to be signed and sent
@@ -399,6 +400,7 @@ impl DarklakeSDK {
         max_amount_y: u64,
         amount_lp: u64,
         user: &Pubkey,
+        wrap_sol: bool,
     ) -> Result<VersionedTransaction> {
         let is_x_sol = *token_x == SOL_MINT;
         let is_y_sol = *token_y == SOL_MINT;
@@ -440,16 +442,19 @@ impl DarklakeSDK {
         let add_liquidity_instruction = self.add_liquidity_ix(&add_liquidity_params).await?;
 
         let mut instructions = vec![];
-        if is_x_sol {
-            let sol_to_wsol_instructions = get_wrap_sol_to_wsol_instructions(&user, max_amount_x)?;
-            instructions.push(sol_to_wsol_instructions[0].clone());
-            instructions.push(sol_to_wsol_instructions[1].clone());
-            instructions.push(sol_to_wsol_instructions[2].clone());
-        } else if is_y_sol {
-            let sol_to_wsol_instructions = get_wrap_sol_to_wsol_instructions(&user, max_amount_y)?;
-            instructions.push(sol_to_wsol_instructions[0].clone());
-            instructions.push(sol_to_wsol_instructions[1].clone());
-            instructions.push(sol_to_wsol_instructions[2].clone());
+        if wrap_sol {
+            if is_x_sol {
+                let sol_to_wsol_instructions = get_wrap_sol_to_wsol_instructions(&user, max_amount_x)?;
+                instructions.push(sol_to_wsol_instructions[0].clone());
+                instructions.push(sol_to_wsol_instructions[1].clone());
+                instructions.push(sol_to_wsol_instructions[2].clone());
+            }
+            if is_y_sol {
+                let sol_to_wsol_instructions = get_wrap_sol_to_wsol_instructions(&user, max_amount_y)?;
+                instructions.push(sol_to_wsol_instructions[0].clone());
+                instructions.push(sol_to_wsol_instructions[1].clone());
+                instructions.push(sol_to_wsol_instructions[2].clone());
+            }
         }
 
         instructions.push(add_liquidity_instruction);
