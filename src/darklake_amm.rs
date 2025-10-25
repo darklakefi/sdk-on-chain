@@ -82,7 +82,9 @@ pub struct Order {
     pub is_x_to_y: bool,
     pub bump: u8,
 
-    pub padding: [u64; 4],
+    pub lp_fee: u64,
+
+    pub padding: [u64; 3],
 }
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Default)]
@@ -108,7 +110,10 @@ pub struct Pool {
 
     pub bump: u8,
 
-    pub padding: [u64; 4],
+    pub lp_fee_x: u64,
+    pub lp_fee_y: u64,
+
+    pub padding: [u64; 2],
 }
 
 impl Amm for DarklakeAmm {
@@ -244,6 +249,8 @@ impl Amm for DarklakeAmm {
             self.pool.locked_y,
             self.reserve_x_balance,
             self.reserve_y_balance,
+            self.pool.lp_fee_x,
+            self.pool.lp_fee_y,
         )?;
 
         let output_transfer_fee = if is_swap_x_to_y {

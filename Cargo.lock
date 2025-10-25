@@ -1731,7 +1731,7 @@ dependencies = [
 
 [[package]]
 name = "darklake-sdk-on-chain"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "anchor-client",
  "anchor-lang",
@@ -2012,9 +2012,9 @@ dependencies = [
 
 [[package]]
 name = "dex-math"
-version = "0.1.5"
+version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4d236af12cb43b68cf6a4551c0d460996a25d2ee95f85911f19c382110be4c34"
+checksum = "26e2c445ed9d248b7bab6abcd29046a600e38eb70508cbdaada8cb0b4e25e3eb"
 dependencies = [
  "anchor-lang",
  "borsh 0.10.4",
